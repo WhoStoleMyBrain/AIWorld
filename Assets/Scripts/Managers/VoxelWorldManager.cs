@@ -124,14 +124,14 @@ public class VoxelWorldManager : IVoxelWorldManager
         _world.chunksNeedRegenerated.Enqueue(chunkPosition);
     }
 
-    public void RebuildChunk(Vector3 chunkPosition)
-    {
-        if (_world.activeChunks.TryGetValue(chunkPosition, out Chunk chunk))
-        {
-            chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
-            _world.chunksNeedRegenerated.Enqueue(chunkPosition);
-        }
-    }
+    // public void RebuildChunk(Vector3 chunkPosition)
+    // {
+    //     if (_world.activeChunks.TryGetValue(chunkPosition, out Chunk chunk))
+    //     {
+    //         chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
+    //         _world.chunksNeedRegenerated.Enqueue(chunkPosition);
+    //     }
+    // }
 
     private IEnumerable<Vector3> GetVoxelOffsetsInRadius(float radius)
     {

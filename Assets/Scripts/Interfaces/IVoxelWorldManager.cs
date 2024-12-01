@@ -22,5 +22,5 @@ public interface IVoxelWorldManager
     void ModifyVoxel(Vector3 worldPosition, Voxel newVoxel);
 
     // Utility Methods
-    void RebuildChunk(Vector3 chunkPosition);
+    // void RebuildChunk(Vector3 chunkPosition);
 }

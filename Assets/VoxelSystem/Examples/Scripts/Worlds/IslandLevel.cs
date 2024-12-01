@@ -55,9 +55,9 @@ public class IslandLevel : World
                 chunk.chunkPosition = pos;
                 chunk.Initialize(worldMaterials, pos);
 
-                activeChunks.TryAdd(pos, chunk);
+                // activeChunks.TryAdd(pos, chunk);
 
-                GenerationManager.EnqueuePosToGenerate(pos);
+                // GenerationManager.EnqueuePosToGenerate(pos);
             }
         generationStarted = true;
     }

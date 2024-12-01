@@ -7,7 +7,7 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-public static class GenerationManager 
+public static class GenerationManager
 {
     public static ComputeShader voxelData;
     private static ComputeShader voxelContouring;
@@ -65,53 +65,65 @@ public static class GenerationManager
         generatedChunks.Enqueue(chunkPos);
     }
 
-    public static void GenerateChunk(Vector3 chunkPos, Action onComplete = null)
+    public static void GenerateChunk(OctreeNode node, Action onComplete = null)
     {
+        if (node == null || !node.IsLeaf || node.Chunk == null) return;
+
+        // Debug.Log("Trying to generate chunk for position: " + node.Bounds.center);
         var genBuffer = GetGenerationBuffer();
         genBuffer.countBuffer.SetData(new uint[] { 0, 0, 0, 0, 0 });
 
-        voxelData.SetVector("chunkPosition", chunkPos);
+        voxelData.SetVector("chunkPosition", node.Bounds.center);
 
         World.Instance.ExecuteDensityStage(genBuffer, xThreads, yThreads);
         AsyncGPUReadback.Request(genBuffer.heightMap, (callback) =>
         {
-            World.Instance.activeChunks[chunkPos].ProcessNoiseForStructs(genBuffer);
+            node.Chunk.ProcessNoiseForStructs(genBuffer);
             onComplete?.Invoke();
-            Contour(chunkPos, genBuffer);
+            Contour(node, genBuffer);
         });
     }
 
-    public static void RenderChunk(Vector3 chunkPos)
+    public static void RenderChunk(OctreeNode node)
     {
-        if (needRendering.Contains<Vector3>(chunkPos)) return;
-        needRendering.Enqueue(chunkPos);
-    }
+        if (node == null || !node.IsLeaf || node.Chunk == null || node.Chunk.IsRendered) return;
 
-    public static void ProcessRendering()
-    {
-        if (needRendering.TryDequeue(out var chunkPos))
+        var genBuffer = GetGenerationBuffer();
+        voxelContouring.SetVector("chunkPosition", node.Bounds.center);
+
+        voxelContouring.SetBuffer(0, "voxelArray", genBuffer.noiseBuffer);
+        voxelContouring.Dispatch(0, xThreads, yThreads, xThreads);
+
+        AsyncGPUReadback.Request(genBuffer.transparentIndexBuffer, callback =>
         {
-            if (!World.Instance.activeChunks.ContainsKey(chunkPos)) return;
-
-            var genBuffer = GetGenerationBuffer();
-            voxelContouring.SetVector("chunkPosition", chunkPos);
-
-            // Rendering steps (same as before)
-            voxelContouring.SetBuffer(0, "voxelArray", genBuffer.noiseBuffer);
-            voxelContouring.Dispatch(0, xThreads, yThreads, xThreads);
-
-            AsyncGPUReadback.Request(genBuffer.transparentIndexBuffer, callback =>
-            {
-                World.Instance.activeChunks[chunkPos].UploadMesh(genBuffer);
-                RequeueBuffer(genBuffer);
-            });
-        }
+            node.Chunk.UploadMesh(genBuffer);
+            RequeueBuffer(genBuffer);
+        });
     }
 
-
-    static void Contour(Vector3 chunkPos, GenerationBuffer genBuffer)
+    public static void ProcessRendering(OctreeNode rootNode, Vector3 cameraChunkPos, float renderDistanceInWorldUnits)
     {
-        voxelContouring.SetVector("chunkPosition", chunkPos);
+        World.Instance.TraverseOctree(rootNode, node =>
+       {
+           if (node.IsLeaf)
+           {
+               bool withinDistance = node.Bounds.SqrDistance(cameraChunkPos) < renderDistanceInWorldUnits * renderDistanceInWorldUnits;
+
+               if (withinDistance && !node.Chunk.IsRendered)
+               {
+                   node.Chunk.Render();
+               }
+               else if (!withinDistance && node.Chunk.IsRendered)
+               {
+                   node.Chunk.Unrender();
+               }
+           }
+       });
+    }
+
+    static void Contour(OctreeNode node, GenerationBuffer genBuffer)
+    {
+        voxelContouring.SetVector("chunkPosition", node.Bounds.center);
         voxelContouring.SetBuffer(0, "voxelArray", genBuffer.noiseBuffer);
         voxelContouring.SetBuffer(0, "count", genBuffer.countBuffer);
         voxelContouring.SetBuffer(0, "cellVertices", genBuffer.cellVerticesBuffer);
@@ -133,36 +145,74 @@ public static class GenerationManager
 
         AsyncGPUReadback.Request(genBuffer.transparentIndexBuffer, (callback) =>
         {
-            if (World.Instance.activeChunks.ContainsKey(chunkPos))
+            if (node.Chunk != null)
             {
-                World.Instance.activeChunks[chunkPos].UploadMesh(genBuffer);
+                node.Chunk.UploadMesh(genBuffer);
             }
             else
             {
-                Debug.Log("Generated mesh for inactive chunk at: " + chunkPos);
+                Debug.Log("Generated mesh for inactive chunk.");
                 RequeueBuffer(genBuffer);
             }
-
         });
     }
 
     //To be executed on main thread only
-    public static void Tick()
+    public static void Tick(OctreeNode rootNode)
     {
+        Debug.Log("Running Generation Manager Tick");
         if (generatedChunks.Count > 0)
         {
             for (int i = 0; i < maxActionsPerFrame; i++)
             {
-                //Since this would be main thread executed, the false version should just remove the generation from the queue
-                if (generatedChunks.TryDequeue(out var chunk) && World.Instance.activeChunks.ContainsKey(chunk))
+                if (generatedChunks.TryDequeue(out var chunkPos))
                 {
-                    GenerateChunk(chunk);
+                    // Find the corresponding node in the octree
+                    OctreeNode targetNode = FindLeafNode(rootNode, chunkPos);
+
+                    if (targetNode != null && targetNode.IsLeaf && targetNode.Chunk != null)
+                    {
+                        GenerateChunk(targetNode);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Chunk at {chunkPos} not found or invalid in the octree.");
+                    }
                 }
             }
+        } else {
+            Debug.Log("No generatedChunks present. Returning...");
         }
     }
 
-     private static GenerationBuffer GetGenerationBuffer()
+    private static OctreeNode FindLeafNode(OctreeNode node, Vector3 position)
+    {
+        if (node == null) return null;
+
+        if (node.IsLeaf)
+        {
+            if (node.Bounds.Contains(position))
+            {
+                return node;
+            }
+            Debug.Log("Leaf node not in desired position: " + node.Bounds + "/" + position);
+            return null;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (child.Bounds.Contains(position))
+            {
+                return FindLeafNode(child, position);
+            }
+        }
+        Debug.Log("Helpless case. Returning...");
+        return null;
+    }
+
+
+
+    private static GenerationBuffer GetGenerationBuffer()
     {
         if (generationBuffers.TryTake(out var buffer)) return buffer;
         var newBuffer = new GenerationBuffer();
@@ -229,7 +279,7 @@ public class GenerationBuffer : IDisposable
 
     public GenerationBuffer()
     {
-        specialBlocksBuffer = new ComputeBuffer(64, 16); 
+        specialBlocksBuffer = new ComputeBuffer(64, 16);
         heightMap = new ComputeBuffer(((World.WorldSettings.chunkSize + 5) * 4) * ((World.WorldSettings.chunkSize + 5) * 4), 8);
         countBuffer = new ComputeBuffer(5, 4);
         ClearCountBuffer();
@@ -245,8 +295,8 @@ public class GenerationBuffer : IDisposable
         normalBuffer ??= new ComputeBuffer(maxNormals, 12);
         cellVerticesBuffer ??= new ComputeBuffer(World.WorldSettings.ChunkCount, 32);
         colorBuffer ??= new ComputeBuffer(maxVertices, 16);
-        indexBuffer ??= new ComputeBuffer(maxTris*3, 4);
-        transparentIndexBuffer ??= new ComputeBuffer(maxTris*3, 4);
+        indexBuffer ??= new ComputeBuffer(maxTris * 3, 4);
+        transparentIndexBuffer ??= new ComputeBuffer(maxTris * 3, 4);
     }
 
     public void ClearCountBuffer()

@@ -1,10 +1,12 @@
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEditor;
+using UnityEngine.Profiling;
+
 
 public abstract class World : MonoBehaviour
 {
@@ -20,14 +22,20 @@ public abstract class World : MonoBehaviour
 
     //This will contain all modified voxels, structures, whatnot for all chunks, and will effectively be our saving mechanism
     public Dictionary<Vector3, Dictionary<float3, Voxel>> modifiedVoxels = new Dictionary<Vector3, Dictionary<float3, Voxel>>();
-    public ConcurrentDictionary<Vector3, Chunk> activeChunks = new ConcurrentDictionary<Vector3, Chunk>();
+    // public ConcurrentDictionary<Vector3, Chunk> activeChunks = new ConcurrentDictionary<Vector3, Chunk>();
     public Queue<Vector3> chunksNeedRegenerated = new Queue<Vector3>();
     public Queue<MeshData> meshDataPool = new Queue<MeshData>();
+    private Vector3 previouslyCheckedPosition;
+
+    bool performedFirstPass = false;
 
     public static WorldSettings WorldSettings;
 
     Thread tickThread;
-    protected bool killThreads = false;
+    protected Thread renderThread;
+    protected volatile bool killThreads = false;
+    private readonly object cameraPosLock = new object();
+    protected Vector3 lastUpdatedPosition;
     private void Start()
     {
         if (_instance == null)
@@ -59,8 +67,160 @@ public abstract class World : MonoBehaviour
 
         InitializeShaders();
         onBeforeGeneration?.Invoke();
+        InitializeOctree();
+        PopulateOctreeWithChunks();
+        renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
+        renderThread.Start();
         OnStart();
 
+    }
+
+    public void QueueOctreeChunkForRendering(OctreeNode node) {
+        if (!node.IsLeaf || node.Chunk != null) return;
+        GenerationManager.EnqueuePosToGenerate(node.Chunk.chunkPosition);
+    }
+
+    // Insert a chunk into the octree
+    public void InsertChunk(Vector3 chunkPosition)
+    {
+        InsertChunkRecursive(rootNode, chunkPosition);
+    }
+
+    private void InsertChunkRecursive(OctreeNode node, Vector3 chunkPosition)
+    {
+        if (node.IsLeaf)
+        {
+            if (node.Chunk == null)
+            {
+                node.Chunk = new Chunk(WorldSettings.chunkSize);
+            }
+            return;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (child.Bounds.Contains(chunkPosition))
+            {
+                InsertChunkRecursive(child, chunkPosition);
+                break;
+            }
+        }
+    }
+
+    private void PopulateOctreeWithChunks()
+    {
+        Debug.Log("Starting PopulateOctreeWithChunks");
+        TraverseOctree(rootNode, node =>
+        {
+            if (node == null)
+            {
+                Debug.LogError("Encountered a null node during octree traversal.");
+                return;
+            }
+
+            if (node.IsLeaf)
+            {
+                if (node.Bounds != null)
+                {
+                    try
+                    {
+                        node.Chunk = GenerateChunk(node.Bounds.center);
+                        // node.Chunk = GenerateChunk(node.Bounds.center, true);
+                        GenerationManager.GenerateChunk(node); // node.UpdateAggregates should only be called when the full tree is present
+                        QueueOctreeChunkForRendering(node);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error generating chunk at {node.Bounds.center}: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("Node.Bounds is null for a leaf node.");
+                }
+            }
+        });
+        Debug.Log("Finished PopulateOctreeWithChunks");
+    }
+
+    // public Chunk GetChunk(Vector3 pos, bool enqueue = false)
+    // {
+    //     if (chunkPool.Count > 0)
+    //     {
+    //         return chunkPool.Dequeue();
+    //     }
+    //     else
+    //     {
+    //         return GenerateChunk(pos, enqueue);
+    //     }
+    // }
+
+    private void RenderChunksLoop()
+    {
+        Profiler.BeginThreadProfiling("Chunks", "ChunkChecker");
+        while (!killThreads)
+        {
+            if (previouslyCheckedPosition != lastUpdatedPosition || !performedFirstPass)
+            {
+                previouslyCheckedPosition = lastUpdatedPosition;
+                Vector3 cameraChunkPos;
+
+                lock (cameraPosLock)
+                {
+                    cameraChunkPos = lastUpdatedPosition;
+                }
+
+                float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
+
+                TraverseOctree(rootNode, node =>
+                {
+                    if (node.IsLeaf)
+                    {
+                        bool withinDistance = node.Bounds.SqrDistance(cameraChunkPos) < renderDistanceInWorldUnits * renderDistanceInWorldUnits;
+
+                        if (withinDistance && !node.Chunk.IsRendered)
+                        {
+                            node.Chunk.Render();
+                        }
+                        else if (!withinDistance && node.Chunk.IsRendered)
+                        {
+                            node.Chunk.Unrender();
+                        }
+                    }
+                });
+            }
+
+            if (!performedFirstPass)
+                performedFirstPass = true;
+
+            Thread.Sleep(500);
+        }
+    }
+
+    public void TraverseOctree(OctreeNode node, Action<OctreeNode> action)
+    {
+        action.Invoke(node);
+
+        if (!node.IsLeaf && node.Children != null)
+        {
+            foreach (var child in node.Children) TraverseOctree(child, action);
+        }
+    }
+
+    // Initialize the octree
+    public void InitializeOctree()
+    {
+        Debug.Log("Starting InitializeOctree");
+        Vector3 worldCenter = Vector3.zero;
+        Vector3 worldSize = new Vector3(256, 256, 256); // 32*32=1024 // I think I need to start with a cube, otherwise I could not hold cubic chunks in the octree
+        rootNode = new OctreeNode(new Bounds(worldCenter, worldSize), WorldSettings.chunkSize);
+        GenerateOctreeStructure(rootNode);
+        Debug.Log("Finished InitializeOctree");
+    }
+
+    public void GenerateOctreeStructure(OctreeNode node)
+    {
+        node.Subdivide();
     }
 
     public abstract void OnStart();
@@ -77,28 +237,37 @@ public abstract class World : MonoBehaviour
 
     public void Update()
     {
-        GenerationManager.Tick();
+        GenerationManager.Tick(rootNode);
+        // lock (cameraPosLock)
+        // {
+        //     Vector3 cameraChunkPos = lastUpdatedPosition;
+        //     float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
+
+        //     // Call ProcessRendering to ensure chunks within range are rendered
+        //     GenerationManager.ProcessRendering(rootNode, cameraChunkPos, renderDistanceInWorldUnits);
+        // }
+
         DoUpdate();
 
-        for (int x = 0; x < maxChunksToProcessPerFrame * 2; x++)
-        {
-            if (x < maxChunksToProcessPerFrame && chunksNeedRegenerated.Count > 0)
-            {
-                var contToMake = chunksNeedRegenerated.Peek();
-                if (activeChunks.ContainsKey(contToMake) && activeChunks[contToMake].generationState == Chunk.GeneratingState.Idle)
-                {
-                    chunksNeedRegenerated.Dequeue();
-                    Chunk chunk = activeChunks[contToMake];
-                    chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
-                    GenerationManager.GenerateChunk(contToMake);
-                }
-                else
-                {
-                    chunksNeedRegenerated.Dequeue();
-                    chunksNeedRegenerated.Enqueue(contToMake);
-                }
-            }
-        }
+        // for (int x = 0; x < maxChunksToProcessPerFrame * 2; x++)
+        // {
+        //     if (x < maxChunksToProcessPerFrame && chunksNeedRegenerated.Count > 0)
+        //     {
+        //         var contToMake = chunksNeedRegenerated.Peek();
+        //         if (activeChunks.ContainsKey(contToMake) && activeChunks[contToMake].generationState == Chunk.GeneratingState.Idle)
+        //         {
+        //             chunksNeedRegenerated.Dequeue();
+        //             Chunk chunk = activeChunks[contToMake];
+        //             chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
+        //             GenerationManager.GenerateChunk(contToMake);
+        //         }
+        //         else
+        //         {
+        //             chunksNeedRegenerated.Dequeue();
+        //             chunksNeedRegenerated.Enqueue(contToMake);
+        //         }
+        //     }
+        // }
 
     }
 
@@ -110,6 +279,15 @@ public abstract class World : MonoBehaviour
             DoTick();
             Thread.Sleep(WorldSettings.tickTime);
         }
+    }
+
+    // Generate a chunk (placeholder for actual chunk initialization)
+    public Chunk GenerateChunk(Vector3 position, bool enqueue = true)
+    {
+        Chunk chunk = new GameObject("Chunk").AddComponent<Chunk>();
+        chunk.transform.parent = transform;
+        chunk.Initialize(worldMaterials, position);
+        return chunk;
     }
 
     public virtual void DoTick() { }
@@ -198,15 +376,15 @@ public abstract class World : MonoBehaviour
                 modifiedVoxels[chunkPosition][localPos] = value;
         }
 
-        if (activeChunks.ContainsKey(chunkPosition))
-        {
-            Chunk c = activeChunks[chunkPosition];
-            if (c.chunkState != Chunk.ChunkState.WaitingToMesh)
-            {
-                c.chunkState = Chunk.ChunkState.WaitingToMesh;
-                chunksNeedRegenerated.Enqueue(c.chunkPosition);
-            }
-        }
+        // if (activeChunks.ContainsKey(chunkPosition))
+        // {
+        //     Chunk c = activeChunks[chunkPosition];
+        //     if (c.chunkState != Chunk.ChunkState.WaitingToMesh)
+        //     {
+        //         c.chunkState = Chunk.ChunkState.WaitingToMesh;
+        //         chunksNeedRegenerated.Enqueue(c.chunkPosition);
+        //     }
+        // }
     }
 
     public bool GetVoxelAtCoord(Vector3 chunkPosition, Vector3 voxelPosition, out Voxel value)
@@ -220,14 +398,14 @@ public abstract class World : MonoBehaviour
         //Check separate module dicts before modified
         if (ActiveVoxelModule.Exists)
         {
-            if (canExistWithinChunk)
-            {
-                if (activeChunks.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels[chunkPosition].ContainsKey(voxelPosition))
-                {
-                    voxelExists = true;
-                    value = ActiveVoxelModule.activeVoxels[chunkPosition][voxelPosition];
-                }
-            }
+            // if (canExistWithinChunk)
+            // {
+            // if (activeChunks.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels[chunkPosition].ContainsKey(voxelPosition))
+            // {
+            //     voxelExists = true;
+            //     value = ActiveVoxelModule.activeVoxels[chunkPosition][voxelPosition];
+            // }
+            // }
 
             for (int i = 0; i < neighbors.Item2; i++)
             {
@@ -236,8 +414,8 @@ public abstract class World : MonoBehaviour
                 {
                     continue;
                 }
-                if (!activeChunks.ContainsKey(neighbors.Item1[i]))
-                    continue;
+                // if (!activeChunks.ContainsKey(neighbors.Item1[i]))
+                //     continue;
                 if (!ActiveVoxelModule.activeVoxels.ContainsKey(neighbors.Item1[i]))
                     continue;
                 if (!ActiveVoxelModule.activeVoxels[neighbors.Item1[i]].ContainsKey(x))
@@ -251,14 +429,14 @@ public abstract class World : MonoBehaviour
         if (voxelExists)
             return voxelExists;
 
-        if (canExistWithinChunk)
-        {
-            if (activeChunks.ContainsKey(chunkPosition) && modifiedVoxels.ContainsKey(chunkPosition) && modifiedVoxels[chunkPosition].ContainsKey(voxelPosition))
-            {
-                voxelExists = true;
-                value = modifiedVoxels[chunkPosition][voxelPosition];
-            }
-        }
+        // if (canExistWithinChunk)
+        // {
+        // if (activeChunks.ContainsKey(chunkPosition) && modifiedVoxels.ContainsKey(chunkPosition) && modifiedVoxels[chunkPosition].ContainsKey(voxelPosition))
+        // {
+        //     voxelExists = true;
+        //     value = modifiedVoxels[chunkPosition][voxelPosition];
+        // }
+        // }
 
         for (int i = 0; i < neighbors.Item2; i++)
         {
@@ -267,8 +445,8 @@ public abstract class World : MonoBehaviour
             {
                 continue;
             }
-            if (!activeChunks.ContainsKey(neighbors.Item1[i]))
-                continue;
+            // if (!activeChunks.ContainsKey(neighbors.Item1[i]))
+            //     continue;
             if (!modifiedVoxels.ContainsKey(neighbors.Item1[i]))
                 continue;
             if (!modifiedVoxels[neighbors.Item1[i]].ContainsKey(x))
@@ -402,9 +580,11 @@ public abstract class World : MonoBehaviour
 
     private void ShutDown()
     {
+        killThreads = true;
         GenerationManager.Shutdown();
         onShutdown?.Invoke();
         tickThread?.Abort();
+        renderThread?.Abort();
     }
 
     private static World _instance;

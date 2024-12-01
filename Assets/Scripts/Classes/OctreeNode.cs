@@ -23,9 +23,8 @@ public class OctreeNode
     }
 
     // Subdivide this node into 8 children
-    public void Subdivide(int depth=0)
+    public void Subdivide()
     {
-        if (depth > 3) return;
 
         if (!IsLeaf) return; // Prevent double subdivision
         // Stop subdividing if all dimensions match the chunk size
@@ -49,7 +48,8 @@ public class OctreeNode
             Bounds childBounds = new Bounds(min + offset + size / 2, size);
 
             Children[i] = new OctreeNode(childBounds, ChunkSize);
-            Children[i].Subdivide(depth); // Recursively subdivide each child
+            // Debug.Log("Subdividing child of size: " + Children[i].Bounds);
+            Children[i].Subdivide(); // Recursively subdivide each child
         }
         IsLeaf = false;
         Chunk = null; // Clear chunk reference as this is no longer a leaf node

@@ -19,39 +19,39 @@ public class ActiveVoxelModule : WorldModule
     {
         foreach (var kvp in activeVoxels)
         {
-            if (World.Instance.activeChunks.ContainsKey(kvp.Key))
-            {
-                Chunk c = World.Instance.activeChunks[kvp.Key];
-                if (!c.needProcessBlockTicks)
-                {
-                    List<Vector3> toRemove = new List<Vector3>();
-                    foreach (var activeVoxelKVP in kvp.Value)
-                    {
-                        if (activeVoxelKVP.Value.ActiveValue < 15)
-                        {
-                            toRemove.Add(activeVoxelKVP.Key);
-                            continue;
-                        }
-                        c.blockPosToUpdate.Add(activeVoxelKVP.Key);
-                    }
-                    if (c.blockPosToUpdate.Count > 0)
-                    {
-                        c.needProcessBlockTicks = true;
-                        if (c.chunkState != Chunk.ChunkState.WaitingToMesh)
-                        {
-                            c.chunkState = Chunk.ChunkState.WaitingToMesh;
-                            World.Instance.chunksNeedRegenerated.Enqueue(c.chunkPosition);
-                        }
-                    }
+            // if (World.Instance.activeChunks.ContainsKey(kvp.Key))
+            // {
+            //     Chunk c = World.Instance.activeChunks[kvp.Key];
+            //     if (!c.needProcessBlockTicks)
+            //     {
+            //         List<Vector3> toRemove = new List<Vector3>();
+            //         foreach (var activeVoxelKVP in kvp.Value)
+            //         {
+            //             if (activeVoxelKVP.Value.ActiveValue < 15)
+            //             {
+            //                 toRemove.Add(activeVoxelKVP.Key);
+            //                 continue;
+            //             }
+            //             c.blockPosToUpdate.Add(activeVoxelKVP.Key);
+            //         }
+            //         if (c.blockPosToUpdate.Count > 0)
+            //         {
+            //             c.needProcessBlockTicks = true;
+            //             if (c.chunkState != Chunk.ChunkState.WaitingToMesh)
+            //             {
+            //                 c.chunkState = Chunk.ChunkState.WaitingToMesh;
+            //                 World.Instance.chunksNeedRegenerated.Enqueue(c.chunkPosition);
+            //             }
+            //         }
 
-                    foreach (Vector3 v in toRemove)
-                    {
-                        if(!kvp.Value.TryRemove(v, out var voxel))
-                            Debug.Log("failed");
+            //         foreach (Vector3 v in toRemove)
+            //         {
+            //             if(!kvp.Value.TryRemove(v, out var voxel))
+            //                 Debug.Log("failed");
                         
-                    }
-                }
-            }
+            //         }
+            //     }
+            // }
         }
     }
     

@@ -28,12 +28,44 @@ public class Chunk : MonoBehaviour
     public List<Vector3> blockPosToUpdate = new List<Vector3>();
 
     public GenerationBuffer generationBuffer;
+    private bool isRendered;
+
+    public bool IsRendered => isRendered;
     public Chunk(int size)
     {
         voxelArray = new Voxel[size, size, size];
     }
 
-     // Retrieve a voxel at a given position
+    public void Render()
+    {
+        if (isRendered) return;
+
+        // Debug.Log($"Rendering chunk at position: {chunkPosition}");
+
+        if (mesh == null)
+        {
+            Debug.LogWarning("Mesh data is null, cannot render.");
+            return;
+        }
+
+        meshFilter.sharedMesh = mesh;
+        meshRenderer.enabled = true;
+        isRendered = true;
+    }
+
+    public void Unrender()
+    {
+        if (!isRendered) return;
+
+        // Debug.Log($"Unrendering chunk at position: {chunkPosition}");
+
+        meshFilter.sharedMesh = null;
+        meshRenderer.enabled = false;
+        isRendered = false;
+    }
+
+
+    // Retrieve a voxel at a given position
     public Voxel GetVoxel(Vector3Int localPos)
     {
         if (modifiedVoxels.TryGetValue(localPos, out Voxel voxel))
@@ -52,7 +84,8 @@ public class Chunk : MonoBehaviour
     // Check if the chunk contains water
     public bool ContainsWater()
     {
-        if (voxelArray == null) {
+        if (voxelArray == null)
+        {
             Debug.Log("In Voxel checked for ContainsWater, but voxelArray was null. Position: " + chunkPosition);
         }
         foreach (var voxel in voxelArray)
@@ -109,7 +142,7 @@ public class Chunk : MonoBehaviour
 
         Vector4[] seedBlocks = new Vector4[specialBlockCount[1]];
         generationBuffer.specialBlocksBuffer.GetData(seedBlocks, 0, 0, specialBlockCount[1]);
-        
+
         //Ensure that we have a created dictionary for our modified voxels
         if (!World.Instance.modifiedVoxels.ContainsKey(chunkPosition))
         {
@@ -118,7 +151,7 @@ public class Chunk : MonoBehaviour
 
         World.onBeforeMesh?.Invoke(this, specialBlockCount[1], seedBlocks);
         processLocalMods = true;
-        
+
         //Ensure modified voxels are added to the noiseBuffer to be meshed, must be done before active voxels are calculated so that the data exists
         foreach (var kvp in World.Instance.modifiedVoxels[chunkPosition])
         {
