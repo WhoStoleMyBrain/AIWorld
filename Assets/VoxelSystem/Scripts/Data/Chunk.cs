@@ -10,6 +10,9 @@ using UnityEngine.Rendering;
 [RequireComponent(typeof(MeshCollider))]
 public class Chunk : MonoBehaviour
 {
+    private Voxel[,,] voxelArray; // Base array for chunk data
+    private Dictionary<Vector3Int, Voxel> modifiedVoxels = new Dictionary<Vector3Int, Voxel>();
+
     public Vector3 chunkPosition;
 
     private MeshRenderer meshRenderer;
@@ -25,6 +28,52 @@ public class Chunk : MonoBehaviour
     public List<Vector3> blockPosToUpdate = new List<Vector3>();
 
     public GenerationBuffer generationBuffer;
+    public Chunk(int size)
+    {
+        voxelArray = new Voxel[size, size, size];
+    }
+
+     // Retrieve a voxel at a given position
+    public Voxel GetVoxel(Vector3Int localPos)
+    {
+        if (modifiedVoxels.TryGetValue(localPos, out Voxel voxel))
+        {
+            return voxel;
+        }
+        return voxelArray[localPos.x, localPos.y, localPos.z];
+    }
+
+    // Modify a voxel
+    public void SetVoxel(Vector3Int localPos, Voxel voxel)
+    {
+        modifiedVoxels[localPos] = voxel;
+    }
+
+    // Check if the chunk contains water
+    public bool ContainsWater()
+    {
+        if (voxelArray == null) {
+            Debug.Log("In Voxel checked for ContainsWater, but voxelArray was null. Position: " + chunkPosition);
+        }
+        foreach (var voxel in voxelArray)
+        {
+            // TODO Implement isWater for Voxel
+            if (voxel.isSolid) return true;
+        }
+        return false;
+    }
+
+    public int TreeCount()
+    {
+        // Implement logic to count trees based on voxel data
+        return 0;
+    }
+
+    public float AverageHeight()
+    {
+        // Implement logic to calculate average terrain height
+        return 0;
+    }
     public void Initialize(Material[] mats, Vector3 position)
     {
         ConfigureComponents();

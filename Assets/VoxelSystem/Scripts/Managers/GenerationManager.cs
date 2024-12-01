@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -14,7 +15,9 @@ public static class GenerationManager
     private static ConcurrentBag<GenerationBuffer> generationBuffers = new ConcurrentBag<GenerationBuffer>();
     private static List<GenerationBuffer> allGenerationBuffers = new List<GenerationBuffer>();
 
-    private static ConcurrentQueue<Vector3> needGenerated = new ConcurrentQueue<Vector3> ();
+    private static ConcurrentQueue<Vector3> needRendering = new ConcurrentQueue<Vector3>();
+    private static ConcurrentQueue<Vector3> generatedChunks = new ConcurrentQueue<Vector3>();
+
     static ComputeBuffer voxelColorsArray;
 
     private static int xThreads;
@@ -59,29 +62,52 @@ public static class GenerationManager
 
     public static void EnqueuePosToGenerate(Vector3 chunkPos)
     {
-        needGenerated.Enqueue(chunkPos);
+        generatedChunks.Enqueue(chunkPos);
     }
 
-    public static void GenerateChunkAt(Vector3 chunkPos)
+    public static void GenerateChunk(Vector3 chunkPos, Action onComplete = null)
     {
-        if (!asyncCompute && mainThreadID != Thread.CurrentThread.ManagedThreadId) {
-            needGenerated.Enqueue(chunkPos);
-            return;
-        }
-
         var genBuffer = GetGenerationBuffer();
         genBuffer.countBuffer.SetData(new uint[] { 0, 0, 0, 0, 0 });
 
         voxelData.SetVector("chunkPosition", chunkPos);
-        voxelContouring.SetVector("chunkPosition", chunkPos);
 
         World.Instance.ExecuteDensityStage(genBuffer, xThreads, yThreads);
         AsyncGPUReadback.Request(genBuffer.heightMap, (callback) =>
         {
             World.Instance.activeChunks[chunkPos].ProcessNoiseForStructs(genBuffer);
+            onComplete?.Invoke();
             Contour(chunkPos, genBuffer);
         });
     }
+
+    public static void RenderChunk(Vector3 chunkPos)
+    {
+        if (needRendering.Contains<Vector3>(chunkPos)) return;
+        needRendering.Enqueue(chunkPos);
+    }
+
+    public static void ProcessRendering()
+    {
+        if (needRendering.TryDequeue(out var chunkPos))
+        {
+            if (!World.Instance.activeChunks.ContainsKey(chunkPos)) return;
+
+            var genBuffer = GetGenerationBuffer();
+            voxelContouring.SetVector("chunkPosition", chunkPos);
+
+            // Rendering steps (same as before)
+            voxelContouring.SetBuffer(0, "voxelArray", genBuffer.noiseBuffer);
+            voxelContouring.Dispatch(0, xThreads, yThreads, xThreads);
+
+            AsyncGPUReadback.Request(genBuffer.transparentIndexBuffer, callback =>
+            {
+                World.Instance.activeChunks[chunkPos].UploadMesh(genBuffer);
+                RequeueBuffer(genBuffer);
+            });
+        }
+    }
+
 
     static void Contour(Vector3 chunkPos, GenerationBuffer genBuffer)
     {
@@ -123,30 +149,25 @@ public static class GenerationManager
     //To be executed on main thread only
     public static void Tick()
     {
-        if (needGenerated.Count > 0)
+        if (generatedChunks.Count > 0)
         {
             for (int i = 0; i < maxActionsPerFrame; i++)
             {
                 //Since this would be main thread executed, the false version should just remove the generation from the queue
-                if (needGenerated.TryDequeue(out var chunk) && World.Instance.activeChunks.ContainsKey(chunk))
+                if (generatedChunks.TryDequeue(out var chunk) && World.Instance.activeChunks.ContainsKey(chunk))
                 {
-                    GenerateChunkAt(chunk);
+                    GenerateChunk(chunk);
                 }
             }
         }
     }
 
-    static GenerationBuffer GetGenerationBuffer()
+     private static GenerationBuffer GetGenerationBuffer()
     {
-        if (generationBuffers.Count > 0 && generationBuffers.TryTake(out var buffer))
-            return buffer;
-        else
-        {
-            Debug.Log("New GenBuffers");
-            GenerationBuffer bufferNew = new GenerationBuffer();
-            allGenerationBuffers.Add(bufferNew);
-            return bufferNew;
-        }
+        if (generationBuffers.TryTake(out var buffer)) return buffer;
+        var newBuffer = new GenerationBuffer();
+        allGenerationBuffers.Add(newBuffer);
+        return newBuffer;
     }
 
     public static void RequeueBuffer(GenerationBuffer ToQueue)
@@ -156,9 +177,7 @@ public static class GenerationManager
 
     public static void Shutdown()
     {
-        foreach (GenerationBuffer buffer in allGenerationBuffers)
-            buffer.Dispose();
-
+        foreach (var buffer in allGenerationBuffers) buffer.Dispose();
         voxelColorsArray.Dispose();
     }
 
@@ -187,7 +206,7 @@ public static class GenerationManager
     {
         get
         {
-            return needGenerated.Count;
+            return generatedChunks.Count;
         }
     }
 }

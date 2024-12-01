@@ -27,8 +27,9 @@ public class InfiniteTerrain : World
 
     ComputeBuffer biomesArray;
     int mainThreadID;
-    
+
     Thread checkActiveChunks;
+    private Thread renderThread;
     bool performedFirstPass = false;
     bool initialGenerationComplete = false;
 
@@ -36,7 +37,182 @@ public class InfiniteTerrain : World
     {
         World.onShutdown += ShutDown;
         InitializeWorld();
+        InitializeOctree();
+        PopulateOctreeWithChunks();
+        CheckIfChunksArePresent();
+        // Debug.Log("Populated octree!");
+        // Debug.Log(rootNode.Bounds);
+        // Debug.Log(rootNode.Children.GetValue(0));
+        // Start rendering thread
+        // renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
+        // renderThread.Start();
     }
+
+    public void CheckIfChunksArePresent()
+    {
+        Debug.Log("Finished PopulateOctreeWithChunks");
+        Chunk tmpChunk = GetChunkFromLeafNode(rootNode);
+        if (tmpChunk != null)
+        {
+            Debug.Log("Found Chunk? " + tmpChunk.chunkPosition);
+            Debug.Log("Found Chunk? " + tmpChunk.chunkState);
+            Debug.Log("Found Chunk? " + tmpChunk.ContainsWater());
+
+        }
+        Debug.Log("Finished PopulateOctreeWithChunks");
+    }
+
+    public Chunk GetChunkFromLeafNode(OctreeNode node)
+    {
+        if (node == null)
+        {
+            Debug.LogWarning("Provided node is null.");
+            return null;
+        }
+
+        // Base case: If this node is a leaf, return its chunk (if it exists).
+        if (node.IsLeaf)
+        {
+            if (node.Chunk != null)
+            {
+                return node.Chunk;
+            }
+            else
+            {
+                Debug.LogWarning("Leaf node does not contain a chunk.");
+                return null;
+            }
+        }
+
+        // Recursive case: Traverse all children and look for a chunk in the leaf nodes.
+        foreach (OctreeNode child in node.Children)
+        {
+            if (child != null) // Safety check for uninitialized children
+            {
+                Chunk foundChunk = GetChunkFromLeafNode(child);
+                if (foundChunk != null)
+                {
+                    return foundChunk; // Return as soon as a valid chunk is found
+                }
+            }
+        }
+
+        // No chunk was found in the subtree.
+        Debug.LogWarning("No chunk found in the subtree starting from the given node.");
+        return null;
+    }
+
+
+    // Initialize the octree
+    public void InitializeOctree()
+    {
+        Debug.Log("Starting InitializeOctree");
+        Vector3 worldCenter = Vector3.zero;
+        Vector3 worldSize = new Vector3(256, 256, 256); // 32*32=1024 // I think I need to start with a cube, otherwise I could not hold cubic chunks in the octree
+        rootNode = new OctreeNode(new Bounds(worldCenter, worldSize), WorldSettings.chunkSize);
+        GenerateOctreeStructure(rootNode);
+        Debug.Log("Finished InitializeOctree");
+    }
+
+    public void GenerateOctreeStructure(OctreeNode node)
+    {
+        node.Subdivide();
+        // node.ValidateLeafNodes();
+        // PopulateOctreeWithChunks();
+    }
+
+
+
+    // Insert a chunk into the octree
+    public void InsertChunk(Vector3 chunkPosition)
+    {
+        InsertChunkRecursive(rootNode, chunkPosition);
+    }
+
+    private void InsertChunkRecursive(OctreeNode node, Vector3 chunkPosition)
+    {
+        if (node.IsLeaf)
+        {
+            if (node.Chunk == null)
+            {
+                node.Chunk = new Chunk(WorldSettings.chunkSize);
+            }
+            return;
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (child.Bounds.Contains(chunkPosition))
+            {
+                InsertChunkRecursive(child, chunkPosition);
+                break;
+            }
+        }
+    }
+
+    private void PopulateOctreeWithChunks()
+    {
+        Debug.Log("Starting PopulateOctreeWithChunks");
+        TraverseOctree(rootNode, node =>
+        {
+            if (node == null)
+            {
+                Debug.LogError("Encountered a null node during octree traversal.");
+                return;
+            }
+
+            if (node.IsLeaf)
+            {
+                if (node.Bounds != null)
+                {
+                    try
+                    {
+                        node.Chunk = GetChunk(node.Bounds.center);
+                        // GenerationManager.GenerateChunk(node.Bounds.center, null); // node.UpdateAggregates should only be called when the full tree is present
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error generating chunk at {node.Bounds.center}: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("Node.Bounds is null for a leaf node.");
+                }
+            }
+        });
+        Debug.Log("Finished PopulateOctreeWithChunks");
+    }
+
+
+    private void RenderChunksLoop()
+    {
+        while (!killThreads)
+        {
+            Vector3 cameraChunkPos = positionToChunkCoord(mainCamera.transform.position);
+
+            TraverseOctree(rootNode, node =>
+            {
+                if (node.IsLeaf && node.Bounds.SqrDistance(cameraChunkPos) < WorldSettings.renderDistance * WorldSettings.renderDistance)
+                {
+                    GenerationManager.RenderChunk(node.Bounds.center);
+                }
+            });
+
+            Thread.Sleep(500);
+        }
+    }
+
+    private void TraverseOctree(OctreeNode node, Action<OctreeNode> action)
+    {
+        action.Invoke(node);
+
+        if (!node.IsLeaf && node.Children != null)
+        {
+            foreach (var child in node.Children) TraverseOctree(child, action);
+        }
+    }
+
 
 
     public override void InitializeDensityShader()
@@ -57,15 +233,16 @@ public class InfiniteTerrain : World
         GenerationManager.voxelData.SetBuffer(0, "biomeArray", biomesArray);
         GenerationManager.voxelData.SetBuffer(1, "biomeArray", biomesArray);
     }
-    
+
     private void InitializeWorld()
     {
+        Debug.Log("Starting InitializeWorld");
         WorldSettings = worldSettings;
 
         int renderSizePlusExcess = WorldSettings.renderDistance + 3;
         int totalChunks = renderSizePlusExcess * renderSizePlusExcess;
 
-        if(StructureModule.Exists)
+        if (StructureModule.Exists)
             StructureModule.IntializeRandom(seed);
 
         worldMaterials[0].SetTexture("_TextureArray", GenerateTextureArray());
@@ -80,40 +257,42 @@ public class InfiniteTerrain : World
         {
             GenerateChunk(Vector3.zero, true);
         }
-        
+
         checkActiveChunks = new Thread(CheckActiveChunksLoop);
         checkActiveChunks.Priority = System.Threading.ThreadPriority.BelowNormal;
-        checkActiveChunks.Start(); 
+        checkActiveChunks.Start();
+        Debug.Log("Finished InitializeWorld");
     }
     public override void DoUpdate()
     {
+
         if (mainCamera?.transform.position != lastUpdatedPosition)
         {
             //Update position so our CheckActiveChunksLoop thread has it
             lastUpdatedPosition = positionToChunkCoord(mainCamera.transform.position);
         }
 
-        Vector3 contToMake; 
-        
+        Vector3 contToMake;
+
         while (deactiveChunks.Count > 0 && deactiveChunks.TryDequeue(out contToMake))
         {
             deactiveChunk(contToMake);
         }
         for (int x = 0; x < maxChunksToProcessPerFrame; x++)
         {
-            if (x < maxChunksToProcessPerFrame&& chunksNeedCreation.Count > 0 && chunksNeedCreation.TryDequeue(out contToMake))
+            if (x < maxChunksToProcessPerFrame && chunksNeedCreation.Count > 0 && chunksNeedCreation.TryDequeue(out contToMake))
             {
                 Chunk chunk = GetChunk(contToMake);
                 chunk.chunkPosition = contToMake;
                 chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
                 activeChunks.TryAdd(contToMake, chunk);
-                GenerationManager.GenerateChunkAt(contToMake);
+                GenerationManager.GenerateChunk(contToMake);
                 x++;
             }
-
         }
+        GenerationManager.ProcessRendering();
 
-        if(!initialGenerationComplete && chunksNeedRegenerated.Count == 0 && chunksNeedCreation.Count == 0)
+        if (!initialGenerationComplete && chunksNeedRegenerated.Count == 0 && chunksNeedCreation.Count == 0)
         {
             onGenerationComplete?.Invoke();
             initialGenerationComplete = true;
@@ -134,7 +313,7 @@ public class InfiniteTerrain : World
             if (previouslyCheckedPosition != lastUpdatedPosition || !performedFirstPass)
             {
                 previouslyCheckedPosition = lastUpdatedPosition;
-                
+
                 for (int x = -halfRenderSize; x < halfRenderSize; x++)
                     for (int z = -halfRenderSize; z < halfRenderSize; z++)
                     {
@@ -163,12 +342,12 @@ public class InfiniteTerrain : World
         }
         Profiler.EndThreadProfiling();
     }
-    
+
 
     #region Chunk Pooling
     public Chunk GetChunk(Vector3 pos)
     {
-        if(chunkPool.Count > 0)
+        if (chunkPool.Count > 0)
         {
             return chunkPool.Dequeue();
         }
@@ -180,7 +359,7 @@ public class InfiniteTerrain : World
 
     Chunk GenerateChunk(Vector3 position, bool enqueue = true)
     {
-        if(Thread.CurrentThread.ManagedThreadId != mainThreadID)
+        if (Thread.CurrentThread.ManagedThreadId != mainThreadID)
         {
             chunksNeedCreation.Enqueue(position);
             return null;
@@ -210,7 +389,7 @@ public class InfiniteTerrain : World
             }
             else
                 return false;
-        
+
         }
 
         return false;
@@ -222,29 +401,29 @@ public class InfiniteTerrain : World
         killThreads = true;
         checkActiveChunks?.Abort();
 
-        foreach(var c in activeChunks.Keys)
+        foreach (var c in activeChunks.Keys)
         {
-            if(activeChunks.TryRemove(c, out var cont))
+            if (activeChunks.TryRemove(c, out var cont))
             {
                 cont.Dispose();
             }
         }
 
         //Try to force cleanup of editor memory
-        #if UNITY_EDITOR
-            EditorUtility.UnloadUnusedAssetsImmediate();
-            GC.Collect();
-        #endif
+#if UNITY_EDITOR
+        EditorUtility.UnloadUnusedAssetsImmediate();
+        GC.Collect();
+#endif
     }
 
-    
+
 
     Biome[] getBiomes()
     {
         Dictionary<int, List<Foliage>> foliageByEnvId = new Dictionary<int, List<Foliage>>();
         Dictionary<int, List<Structure>> structuresByEnvId = new Dictionary<int, List<Structure>>();
 
-        foreach (var str in this.foliage)
+        foreach (var str in foliage)
         {
             foreach (int envID in str.environmentsToSpawnIn)
                 if (foliageByEnvId.ContainsKey(envID))
@@ -257,7 +436,7 @@ public class InfiniteTerrain : World
                 }
         }
 
-        foreach (var str in this.structures)
+        foreach (var str in structures)
         {
             foreach (int envID in str.environmentsToSpawnIn)
                 if (structuresByEnvId.ContainsKey(envID))
@@ -306,6 +485,8 @@ public class InfiniteTerrain : World
     private void ShutDown()
     {
         biomesArray?.Dispose();
+        killThreads = true;
+        renderThread?.Abort();
         World.onShutdown -= ShutDown;
     }
 

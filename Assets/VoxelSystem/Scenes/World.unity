@@ -119,6 +119,33 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &342654138 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 456664884101864731, guid: aa067dc843ecc724c8a2d5cc8bead40b, type: 3}
+  m_PrefabInstance: {fileID: 456664883060319518}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &342654139
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 342654138}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a7ef93130a7204428cae52113f5b424, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  keyDistanceToWater: 119
+  keyGetFlatAreas: 102
+  keyFlattenArea: 114
+  keyModifyVoxel: 109
+  testPosition: {x: 0, y: 50, z: 0}
+  testRadius: 10
+  maxSlope: 1
+  targetHeight: 5
+  showExecutionTime: 1
+  logResults: 1
 --- !u!1 &414495106
 GameObject:
   m_ObjectHideFlags: 0
@@ -544,7 +571,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 456664884101864731, guid: aa067dc843ecc724c8a2d5cc8bead40b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 342654139}
   m_SourcePrefab: {fileID: 100100000, guid: aa067dc843ecc724c8a2d5cc8bead40b, type: 3}
 --- !u!1001 &5987849111886597963
 PrefabInstance:
@@ -560,7 +590,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5114316295409598397, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5114316295409598399, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: m_RootOrder
@@ -685,7 +715,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7385515670266854305, guid: 8ac4a948e5ab16c4bac5ea9ef84221f2, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

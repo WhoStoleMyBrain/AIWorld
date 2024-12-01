@@ -8,6 +8,8 @@ using UnityEngine;
 
 public abstract class World : MonoBehaviour
 {
+    public OctreeNode rootNode;
+    public int chunkSize;
     public Material[] worldMaterials;
     public Voxels[] voxelDetails;
     public WorldSettings worldSettings;
@@ -28,7 +30,7 @@ public abstract class World : MonoBehaviour
     protected bool killThreads = false;
     private void Start()
     {
-        if(_instance == null)
+        if (_instance == null)
             _instance = this;
         else
         {
@@ -50,15 +52,15 @@ public abstract class World : MonoBehaviour
         tickThread.Priority = System.Threading.ThreadPriority.BelowNormal;
         tickThread.Start();
 
-        foreach (var module in FindObjectsOfType<WorldModule>())
+        foreach (var module in FindObjectsByType<WorldModule>(sortMode: FindObjectsSortMode.None))
         {
             module.Register();
         }
-        
-        InitializeShaders();
 
+        InitializeShaders();
         onBeforeGeneration?.Invoke();
-        OnStart(); 
+        OnStart();
+
     }
 
     public abstract void OnStart();
@@ -77,7 +79,7 @@ public abstract class World : MonoBehaviour
     {
         GenerationManager.Tick();
         DoUpdate();
-        
+
         for (int x = 0; x < maxChunksToProcessPerFrame * 2; x++)
         {
             if (x < maxChunksToProcessPerFrame && chunksNeedRegenerated.Count > 0)
@@ -87,8 +89,8 @@ public abstract class World : MonoBehaviour
                 {
                     chunksNeedRegenerated.Dequeue();
                     Chunk chunk = activeChunks[contToMake];
-                    chunk.chunkState = Chunk.ChunkState.WaitingToMesh; 
-                    GenerationManager.GenerateChunkAt(contToMake);
+                    chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
+                    GenerationManager.GenerateChunk(contToMake);
                 }
                 else
                 {
@@ -97,7 +99,7 @@ public abstract class World : MonoBehaviour
                 }
             }
         }
-        
+
     }
 
     public void TickLoop()
@@ -110,8 +112,8 @@ public abstract class World : MonoBehaviour
         }
     }
 
-    public virtual void DoTick(){}
-    
+    public virtual void DoTick() { }
+
     public abstract void DoUpdate();
 
     #region MeshData Pooling
@@ -206,7 +208,7 @@ public abstract class World : MonoBehaviour
             }
         }
     }
-    
+
     public bool GetVoxelAtCoord(Vector3 chunkPosition, Vector3 voxelPosition, out Voxel value)
     {
         //Get the neighbor coords
@@ -285,7 +287,7 @@ public abstract class World : MonoBehaviour
 
         Vector3[] neighborPos = new Vector3[3];
         int neighborCount = 0;
-        int2 chunkRange = new int2(4, WorldSettings.chunkSize -1);
+        int2 chunkRange = new int2(4, WorldSettings.chunkSize - 1);
         float2 ind2 = new float2(voxelPosition.x, voxelPosition.z);
 
         if (math.any(ind2 < chunkRange[0]) || math.any(ind2 > chunkRange[1]))
@@ -410,8 +412,8 @@ public abstract class World : MonoBehaviour
     {
         get
         {
-            _instance ??= FindObjectOfType<World>();
-            
+            _instance ??= FindFirstObjectByType<World>();
+
             return _instance;
         }
     }
@@ -438,6 +440,6 @@ public class WorldSettings
     public bool useTextures = false;
     public int ChunkCount
     {
-        get { return (chunkSize + 5) *(maxHeight+ 1) * (chunkSize+ 5); }
+        get { return (chunkSize + 5) * (maxHeight + 1) * (chunkSize + 5); }
     }
 }
