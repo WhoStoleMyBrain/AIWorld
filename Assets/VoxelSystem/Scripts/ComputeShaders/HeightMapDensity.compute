@@ -22,7 +22,7 @@ int seed;
 
 uint flattenHeightMap(float2 idx)
 {
-    return idx.x + idx.y * ((chunkSizeX + 5) * 4);
+    return idx.x + idx.y * chunkSizeX;
 }
 
 float fractalNoise(float3 pos, int index, int terrainHeight, bool cave)
@@ -102,31 +102,30 @@ bool getDensityAtPoint(float3 pos, float trueHeight, int index, out float densit
 [numthreads(8,1,8)]
 void GenHeightMap(uint3 i : SV_DispatchThreadID)
 {
-    float3 id = float3(i);
-    if (any(id.xz > (int) ((chunkSizeX + 5) * 4)) || id.y != 0)
+    float2 id = float2(i.x, i.z);
+    if (any(id >= chunkSizeX))
         return;
     
-    float3 pos = (id / 4) + chunkPosition + seedOffset;
-    float2 posXZ = pos.xz;
+    float2 posXZ = id + chunkPosition.xz + seedOffset.xz;
     
     float trueHeight, density;
-    int height;
     int biomeIndex;
-    getDensityAtPoint(pos, trueHeight, biomeIndex);
+    getDensityAtPoint(float3(posXZ, 0), trueHeight, biomeIndex);
    
-    heightMap[(flattenHeightMap(id.xz))] = float2(trueHeight, asfloat(biomeIndex));
+    heightMap[(uint)(id.x + id.y * chunkSizeX)] = float2(trueHeight, asfloat(biomeIndex));
 }
 
 [numthreads(8, 8, 8)]
 void FillArray(uint3 i : SV_DispatchThreadID)
 {
     float3 id = float3(i);
-    if (any(id.xz > chunkSizeX + 3))
+    if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
     
     float3 pos = id + chunkPosition + seedOffset;
     float2 posXZ = pos.xz;
-    float2 hm = heightMap[flattenHeightMap(id.xz * 4)];
+    uint heightMapIndex = (uint)(id.x + id.z * chunkSizeX);
+    float2 hm = heightMap[heightMapIndex];
 
     Voxel vox;
     vox.voxelData = 0;
@@ -214,7 +213,7 @@ void FillArray(uint3 i : SV_DispatchThreadID)
     
     
     
-    if (voxelId != 0)
+    if (voxelId != 0 && voxelId != 240)
         InterlockedAdd(count[0], 1);
     
     vox.setId(voxelId);

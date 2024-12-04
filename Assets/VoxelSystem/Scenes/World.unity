@@ -588,6 +588,10 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 953515657, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 5114316295409598397, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: m_Name
       value: InfiniteTerrain

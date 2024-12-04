@@ -224,6 +224,11 @@ public class Chunk : MonoBehaviour
         mesh.indexFormat = IndexFormat.UInt32;
         mesh.subMeshCount = 2;
 
+        for (int i = 0; i < meshData.verts.Length; i++)
+        {
+            meshData.verts[i] -= chunkPosition;
+        }
+
         mesh.SetVertices(meshData.verts, 0, faceCount[2]);
 
         if (World.WorldSettings.smoothNormals)

@@ -80,7 +80,7 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
 {
     float3 id = float3(i);
     
-    if (any(id.xz > (int) chunkSizeX + 3) || id.y > chunkSizeY)
+    if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
     
     Voxel block = voxelArray[flattenCoord(id)];
@@ -139,7 +139,7 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
 
     position /= crossings;
     
-    position += chunkPosition;
+    // position += chunkPosition;
     cellVertex v;
     
     v.pnt = position;
@@ -154,7 +154,7 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
 void SumNormals(uint3 i : SV_DispatchThreadID)
 {
     float3 id = float3(i);
-    if (!smoothNormals || any(id.xz > (int) chunkSizeX + 3) || id.y > chunkSizeY)
+    if (!smoothNormals || any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
     
     int blockID = voxelArray[flattenCoord(id)].getId();
@@ -204,7 +204,7 @@ void SumNormals(uint3 i : SV_DispatchThreadID)
 void GenerateFaces(uint3 i : SV_DispatchThreadID)
 {
     float3 id = float3(i);
-    if (any(id.xz > (int) chunkSizeX + 1) || any(id.xz <= 1) || id.y > chunkSizeY)
+    if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
     
     Voxel block = voxelArray[flattenCoord(id)];
@@ -220,7 +220,11 @@ void GenerateFaces(uint3 i : SV_DispatchThreadID)
     
     for (int face = 0; face < 6; face++)
     {
-        if (any(id + voxelFaceChecks[face] < 0) || voxelArray[flattenCoord(id + voxelFaceChecks[face])].isOpaque())
+        float3 neighborPos = id + voxelFaceChecks[face];
+        if (any(neighborPos < 0) || any(neighborPos >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
+            continue;
+
+        if (voxelArray[flattenCoord(neighborPos)].isOpaque())
             continue;
 
         if (block.isTransparent() && voxelArray[flattenCoord(id + voxelFaceChecks[face])].isTransparent())

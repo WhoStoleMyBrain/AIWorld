@@ -25,16 +25,13 @@ public abstract class World : MonoBehaviour
     // public ConcurrentDictionary<Vector3, Chunk> activeChunks = new ConcurrentDictionary<Vector3, Chunk>();
     public Queue<Vector3> chunksNeedRegenerated = new Queue<Vector3>();
     public Queue<MeshData> meshDataPool = new Queue<MeshData>();
-    private Vector3 previouslyCheckedPosition;
 
-    bool performedFirstPass = false;
 
     public static WorldSettings WorldSettings;
 
     Thread tickThread;
     protected Thread renderThread;
     protected volatile bool killThreads = false;
-    private readonly object cameraPosLock = new object();
     protected Vector3 lastUpdatedPosition;
     private void Start()
     {
@@ -68,17 +65,23 @@ public abstract class World : MonoBehaviour
         InitializeShaders();
         onBeforeGeneration?.Invoke();
         InitializeOctree();
-        PopulateOctreeWithChunks();
-        renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
-        renderThread.Start();
+        // PopulateOctreeWithChunks();
+
         OnStart();
 
     }
 
-    public void QueueOctreeChunkForRendering(OctreeNode node) {
-        if (!node.IsLeaf || node.Chunk != null) return;
-        GenerationManager.EnqueuePosToGenerate(node.Chunk.chunkPosition);
+    public void QueueOctreeChunkForRendering(OctreeNode node)
+    {
+        if (!node.IsLeaf) return;
+
+        if (node.Chunk == null)
+        {
+            node.Chunk = GenerateChunk(node.Bounds.center);
+        }
+        GenerationManager.EnqueuePosToGenerate(node.Bounds.center);
     }
+
 
     // Insert a chunk into the octree
     public void InsertChunk(Vector3 chunkPosition)
@@ -107,41 +110,41 @@ public abstract class World : MonoBehaviour
         }
     }
 
-    private void PopulateOctreeWithChunks()
-    {
-        Debug.Log("Starting PopulateOctreeWithChunks");
-        TraverseOctree(rootNode, node =>
-        {
-            if (node == null)
-            {
-                Debug.LogError("Encountered a null node during octree traversal.");
-                return;
-            }
+    // private void PopulateOctreeWithChunks()
+    // {
+    //     Debug.Log("Starting PopulateOctreeWithChunks");
+    //     TraverseOctree(rootNode, node =>
+    //     {
+    //         if (node == null)
+    //         {
+    //             Debug.LogError("Encountered a null node during octree traversal.");
+    //             return;
+    //         }
 
-            if (node.IsLeaf)
-            {
-                if (node.Bounds != null)
-                {
-                    try
-                    {
-                        node.Chunk = GenerateChunk(node.Bounds.center);
-                        // node.Chunk = GenerateChunk(node.Bounds.center, true);
-                        GenerationManager.GenerateChunk(node); // node.UpdateAggregates should only be called when the full tree is present
-                        QueueOctreeChunkForRendering(node);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"Error generating chunk at {node.Bounds.center}: {ex.Message}");
-                    }
-                }
-                else
-                {
-                    Debug.LogError("Node.Bounds is null for a leaf node.");
-                }
-            }
-        });
-        Debug.Log("Finished PopulateOctreeWithChunks");
-    }
+    //         if (node.IsLeaf)
+    //         {
+    //             if (node.Bounds != null)
+    //             {
+    //                 try
+    //                 {
+    //                     node.Chunk = GenerateChunk(node.Bounds.center);
+    //                     // node.Chunk = GenerateChunk(node.Bounds.center, true);
+    //                     GenerationManager.GenerateChunk(node); // node.UpdateAggregates should only be called when the full tree is present
+    //                     QueueOctreeChunkForRendering(node);
+    //                 }
+    //                 catch (Exception ex)
+    //                 {
+    //                     Debug.LogError($"Error generating chunk at {node.Bounds.center}: {ex.Message}");
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 Debug.LogError("Node.Bounds is null for a leaf node.");
+    //             }
+    //         }
+    //     });
+    //     Debug.Log("Finished PopulateOctreeWithChunks");
+    // }
 
     // public Chunk GetChunk(Vector3 pos, bool enqueue = false)
     // {
@@ -154,48 +157,6 @@ public abstract class World : MonoBehaviour
     //         return GenerateChunk(pos, enqueue);
     //     }
     // }
-
-    private void RenderChunksLoop()
-    {
-        Profiler.BeginThreadProfiling("Chunks", "ChunkChecker");
-        while (!killThreads)
-        {
-            if (previouslyCheckedPosition != lastUpdatedPosition || !performedFirstPass)
-            {
-                previouslyCheckedPosition = lastUpdatedPosition;
-                Vector3 cameraChunkPos;
-
-                lock (cameraPosLock)
-                {
-                    cameraChunkPos = lastUpdatedPosition;
-                }
-
-                float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
-
-                TraverseOctree(rootNode, node =>
-                {
-                    if (node.IsLeaf)
-                    {
-                        bool withinDistance = node.Bounds.SqrDistance(cameraChunkPos) < renderDistanceInWorldUnits * renderDistanceInWorldUnits;
-
-                        if (withinDistance && !node.Chunk.IsRendered)
-                        {
-                            node.Chunk.Render();
-                        }
-                        else if (!withinDistance && node.Chunk.IsRendered)
-                        {
-                            node.Chunk.Unrender();
-                        }
-                    }
-                });
-            }
-
-            if (!performedFirstPass)
-                performedFirstPass = true;
-
-            Thread.Sleep(500);
-        }
-    }
 
     public void TraverseOctree(OctreeNode node, Action<OctreeNode> action)
     {
@@ -282,13 +243,20 @@ public abstract class World : MonoBehaviour
     }
 
     // Generate a chunk (placeholder for actual chunk initialization)
+
+    // In World.cs
+
     public Chunk GenerateChunk(Vector3 position, bool enqueue = true)
     {
-        Chunk chunk = new GameObject("Chunk").AddComponent<Chunk>();
+        // This method must only be called from the main thread
+        Chunk chunk = new GameObject($"Chunk_{position}").AddComponent<Chunk>();
         chunk.transform.parent = transform;
+        chunk.transform.position = position; // Set the GameObject's position
         chunk.Initialize(worldMaterials, position);
         return chunk;
     }
+
+
 
     public virtual void DoTick() { }
 

@@ -76,12 +76,32 @@ public static class GenerationManager
         voxelData.SetVector("chunkPosition", node.Bounds.center);
 
         World.Instance.ExecuteDensityStage(genBuffer, xThreads, yThreads);
+
+        // After ExecuteDensityStage and before contouring
+        if (!ChunkContainsSolidVoxels(genBuffer))
+        {
+            // The chunk is empty; no need to contour or render
+            RequeueBuffer(genBuffer);
+            node.Chunk = null; // Optionally, remove the chunk reference
+            return;
+        }
+        node.Chunk.generationState = Chunk.GeneratingState.Generating;
+
         AsyncGPUReadback.Request(genBuffer.heightMap, (callback) =>
         {
             node.Chunk.ProcessNoiseForStructs(genBuffer);
             onComplete?.Invoke();
             Contour(node, genBuffer);
         });
+    }
+
+    // Helper method to check if the chunk contains solid voxels
+    private static bool ChunkContainsSolidVoxels(GenerationBuffer genBuffer)
+    {
+        // Implement logic to check the countBuffer or voxel data
+        uint[] counts = new uint[5];
+        genBuffer.countBuffer.GetData(counts);
+        return counts[0] > 0; // counts[0] might represent the number of solid voxels
     }
 
     public static void RenderChunk(OctreeNode node)
@@ -180,7 +200,9 @@ public static class GenerationManager
                     }
                 }
             }
-        } else {
+        }
+        else
+        {
             Debug.Log("No generatedChunks present. Returning...");
         }
     }
@@ -280,7 +302,8 @@ public class GenerationBuffer : IDisposable
     public GenerationBuffer()
     {
         specialBlocksBuffer = new ComputeBuffer(64, 16);
-        heightMap = new ComputeBuffer(((World.WorldSettings.chunkSize + 5) * 4) * ((World.WorldSettings.chunkSize + 5) * 4), 8);
+        int heightMapSize = World.WorldSettings.chunkSize * World.WorldSettings.chunkSize;
+        heightMap = new ComputeBuffer(heightMapSize, sizeof(float) * 2);
         countBuffer = new ComputeBuffer(5, 4);
         ClearCountBuffer();
 

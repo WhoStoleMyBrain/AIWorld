@@ -8,7 +8,11 @@ float3 chunkPosition;
 RWStructuredBuffer<Voxel> voxelArray;
 RWStructuredBuffer<uint> count;
 
-uint flattenCoord(float3 idx)
+uint flattenCoord(float3 id)
 {
-    return round(idx.x) + (round(idx.y) * (chunkSizeX + 5)) + (round(idx.z) * (chunkSizeX + 5) * (chunkSizeY + 1));
+    return id.x + id.y * chunkSizeX + id.z * chunkSizeX * chunkSizeY;
 }
+// uint flattenCoord(float3 idx)
+// {
+//     return round(idx.x) + (round(idx.y) * (chunkSizeX + 5)) + (round(idx.z) * (chunkSizeX + 5) * (chunkSizeY + 1));
+// }

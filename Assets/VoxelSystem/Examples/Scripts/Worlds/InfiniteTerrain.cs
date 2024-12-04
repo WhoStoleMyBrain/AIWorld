@@ -26,9 +26,13 @@ public class InfiniteTerrain : World
     // ConcurrentQueue<Vector3> chunksNeedCreation = new ConcurrentQueue<Vector3>();
     // ConcurrentQueue<Vector3> deactiveChunks = new ConcurrentQueue<Vector3>();
     ConcurrentQueue<OctreeNode> nodeNeedsChunkCreation = new ConcurrentQueue<OctreeNode>();
+    private ConcurrentQueue<OctreeNode> nodesToCreateChunks = new ConcurrentQueue<OctreeNode>();
+    private ConcurrentQueue<OctreeNode> nodesToDispose = new ConcurrentQueue<OctreeNode>();
     ComputeBuffer biomesArray;
     int mainThreadID;
+    private Vector3 previouslyCheckedPosition;
 
+    bool performedFirstPass = false;
     Thread checkActiveChunks;
     // bool initialGenerationComplete = false;
     private readonly object cameraPosLock = new object();
@@ -39,6 +43,8 @@ public class InfiniteTerrain : World
         InitializeWorld();
         // InitializeOctree();
         CheckIfChunksArePresent();
+        renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
+        renderThread.Start();
         // Start rendering thread
     }
 
@@ -121,28 +127,16 @@ public class InfiniteTerrain : World
         Debug.Log("Starting InitializeWorld");
         WorldSettings = worldSettings;
 
-        int renderSizePlusExcess = WorldSettings.renderDistance + 3;
-        int totalChunks = renderSizePlusExcess * renderSizePlusExcess;
-
         if (StructureModule.Exists)
             StructureModule.IntializeRandom(seed);
 
         worldMaterials[0].SetTexture("_TextureArray", GenerateTextureArray());
 
-        // activeChunks = new ConcurrentDictionary<Vector3, Chunk>();
         chunkPool = new Queue<Chunk>();
         meshDataPool = new Queue<MeshData>();
 
         mainThreadID = Thread.CurrentThread.ManagedThreadId;
 
-        // for (int i = 0; i < totalChunks; i++)
-        // {
-        //     GenerateChunk(Vector3.zero, true);
-        // }
-
-        // checkActiveChunks = new Thread(CheckActiveChunksLoop);
-        // checkActiveChunks.Priority = System.Threading.ThreadPriority.BelowNormal;
-        // checkActiveChunks.Start();
         Debug.Log("Finished InitializeWorld");
     }
     public override void DoUpdate()
@@ -156,22 +150,48 @@ public class InfiniteTerrain : World
                 lastUpdatedPosition = positionToChunkCoord(mainCamera.transform.position);
             }
         }
-
         OctreeNode node;
+        int chunksProcessed = 0;
 
-
-        for (int x = 0; x < maxChunksToProcessPerFrame; x++)
+        // Process nodes that need chunk creation
+        while (chunksProcessed < maxChunksToProcessPerFrame && nodesToCreateChunks.TryDequeue(out node))
         {
-            if (x < maxChunksToProcessPerFrame && nodeNeedsChunkCreation.Count > 0 && nodeNeedsChunkCreation.TryDequeue(out node))
+            if (node.Chunk == null)
             {
-                //         // Chunk chunk = GetChunk(contToMake);
-                //         // node.Chunk.chunkPosition = 
-                //         // chunk.chunkPosition = contToMake;
-                node.Chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
-                //         // activeChunks.TryAdd(contToMake, chunk);
-                GenerationManager.GenerateChunk(node);
-                x++;
+                node.Chunk = GenerateChunk(node.Bounds.min);
+                nodeNeedsChunkCreation.Enqueue(node); // Enqueue for generation
             }
+            chunksProcessed++;
+        }
+
+        chunksProcessed = 0;
+
+        // Process nodes that need to be disposed
+        while (chunksProcessed < maxChunksToProcessPerFrame && nodesToDispose.TryDequeue(out node))
+        {
+            if (node.Chunk != null)
+            {
+                node.Chunk.Unrender();
+                node.Chunk.Dispose();
+                node.Chunk = null;
+            }
+            chunksProcessed++;
+        }
+
+
+        chunksProcessed = 0;
+        while (chunksProcessed < maxChunksToProcessPerFrame && nodeNeedsChunkCreation.TryDequeue(out node))
+        {
+            if (node.Chunk != null && node.Chunk.chunkState == Chunk.ChunkState.Idle)
+            {
+                node.Chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
+                GenerationManager.GenerateChunk(node);
+            }
+            else if (node.Chunk != null && node.Chunk.generationState == Chunk.GeneratingState.Idle && !node.Chunk.IsRendered)
+            {
+                node.Chunk.Render();
+            }
+            chunksProcessed++;
         }
         // GenerationManager.ProcessRendering();
 
@@ -182,116 +202,82 @@ public class InfiniteTerrain : World
         // }
     }
 
-    // void CheckActiveChunksLoop()
-    // {
-    //     Profiler.BeginThreadProfiling("Chunks", "ChunkChecker");
-    //     int halfRenderSize = WorldSettings.renderDistance / 2;
-    //     int renderDistPlus1 = WorldSettings.renderDistance + 1;
-    //     Vector3 pos = Vector3.zero;
+    // In InfiniteTerrain.cs
 
-    //     Bounds chunkBounds = new Bounds();
-    //     chunkBounds.size = new Vector3(renderDistPlus1 * WorldSettings.chunkSize, 1, renderDistPlus1 * WorldSettings.chunkSize);
-    //     while (true && !killThreads)
-    //     {
-    //         if (previouslyCheckedPosition != lastUpdatedPosition || !performedFirstPass)
-    //         {
-    //             previouslyCheckedPosition = lastUpdatedPosition;
+    private void RenderChunksLoop()
+    {
+        Profiler.BeginThreadProfiling("Chunks", "ChunkChecker");
+        while (!killThreads)
+        {
+            if (previouslyCheckedPosition != lastUpdatedPosition || !performedFirstPass)
+            {
+                previouslyCheckedPosition = lastUpdatedPosition;
+                Vector3 cameraChunkPos;
 
-    //             for (int x = -halfRenderSize; x < halfRenderSize; x++)
-    //                 for (int z = -halfRenderSize; z < halfRenderSize; z++)
-    //                 {
-    //                     pos.x = x * WorldSettings.chunkSize + previouslyCheckedPosition.x;
-    //                     pos.z = z * WorldSettings.chunkSize + previouslyCheckedPosition.z;
+                lock (cameraPosLock)
+                {
+                    cameraChunkPos = lastUpdatedPosition;
+                }
 
-    //                     if (!activeChunks.ContainsKey(pos))
-    //                     {
-    //                         chunksNeedCreation.Enqueue(pos);
-    //                     }
-    //                 }
+                float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
 
-    //             chunkBounds.center = previouslyCheckedPosition;
+                TraverseOctree(rootNode, node =>
+                {
+                    if (node.IsLeaf)
+                    {
+                        bool withinDistance = node.Bounds.SqrDistance(cameraChunkPos) < renderDistanceInWorldUnits * renderDistanceInWorldUnits;
 
-    //             foreach (var kvp in activeChunks)
-    //             {
-    //                 if (!chunkBounds.Contains(kvp.Key))
-    //                     deactiveChunks.Enqueue(kvp.Key);
-    //             }
-    //         }
+                        if (withinDistance)
+                        {
+                            if (node.Chunk == null)
+                            {
+                                // Initialize the chunk and enqueue it for generation
+                                // node.Chunk = GenerateChunk(node.Bounds.center);
+                                // QueueOctreeChunkForRendering(node);
+                                nodesToCreateChunks.Enqueue(node);
+                            }
+                            else if (!node.Chunk.IsRendered && node.Chunk.generationState == Chunk.GeneratingState.Idle)
+                            {
+                                // node.Chunk.Render();
+                                nodesToCreateChunks.Enqueue(node);
+                            }
+                        }
+                        else if (node.Chunk != null)
+                        {
+                            // Unrender and dispose of chunks that are out of range
+                            if (node.Chunk.IsRendered)
+                            {
+                                nodesToDispose.Enqueue(node);
+                                // node.Chunk.Unrender();
+                            }
+                            //     node.Chunk.Dispose();
+                            //     node.Chunk = null;
+                            //     node.Chunk.Unrender();
+                        }
+                    }
+                });
+            }
 
-    //         if (!performedFirstPass)
-    //             performedFirstPass = true;
+            if (!performedFirstPass)
+                performedFirstPass = true;
 
-    //         Thread.Sleep(500);
-    //     }
-    //     Profiler.EndThreadProfiling();
-    // }
+            Thread.Sleep(500);
+        }
+        Profiler.EndThreadProfiling();
+    }
+
+
 
 
     #region Chunk Pooling
 
-    // public Chunk GetChunk(Vector3 pos, bool enqueue = false)
-    // {
-    //     if (chunkPool.Count > 0)
-    //     {
-    //         return chunkPool.Dequeue();
-    //     }
-    //     else
-    //     {
-    //         return GenerateChunk(pos, enqueue);
-    //     }
-    // }
 
-    // new Chunk GenerateChunk(Vector3 position, bool enqueue = true)
-    // {
-    //     if (Thread.CurrentThread.ManagedThreadId != mainThreadID)
-    //     {
-    //         chunksNeedCreation.Enqueue(position);
-    //         return null;
-    //     }
-    //     Chunk chunk = new GameObject().AddComponent<Chunk>();
-    //     chunk.transform.parent = transform;
-    //     chunk.chunkPosition = position;
-    //     chunk.Initialize(worldMaterials, position);
-
-    //     if (enqueue)
-    //     {
-    //         chunkPool.Enqueue(chunk);
-    //     }
-
-    //     return chunk;
-    // }
-
-    // public bool deactiveChunk(Vector3 position)
-    // {
-    //     if (activeChunks.ContainsKey(position))
-    //     {
-    //         if (activeChunks.TryRemove(position, out Chunk c))
-    //         {
-    //             c.ClearData();
-    //             chunkPool.Enqueue(c);
-    //             return true;
-    //         }
-    //         else
-    //             return false;
-
-    //     }
-
-    //     return false;
-    // }
     #endregion
 
     private void OnApplicationQuit()
     {
         killThreads = true;
         checkActiveChunks?.Abort();
-
-        // foreach (var c in activeChunks.Keys)
-        // {
-        //     if (activeChunks.TryRemove(c, out var cont))
-        //     {
-        //         cont.Dispose();
-        //     }
-        // }
 
         //Try to force cleanup of editor memory
 #if UNITY_EDITOR
@@ -352,18 +338,22 @@ public class InfiniteTerrain : World
 
     public override void ExecuteDensityStage(GenerationBuffer genBuffer, int xThreads, int yThreads)
     {
+
+        int chunkSize = World.WorldSettings.chunkSize;
+        int threadGroupsX = Mathf.CeilToInt(chunkSize / 8.0f);
+        int threadGroupsY = Mathf.CeilToInt(World.WorldSettings.maxHeight / 8.0f);
         GenerationManager.voxelData.SetBuffer(2, "voxelArray", genBuffer.noiseBuffer);
         GenerationManager.voxelData.Dispatch(2, xThreads, yThreads, xThreads);
 
+        // GenHeightMap kernel
         GenerationManager.voxelData.SetBuffer(0, "heightMap", genBuffer.heightMap);
-        GenerationManager.voxelData.Dispatch(0, xThreads * 4, 1, xThreads * 4);
-
+        GenerationManager.voxelData.Dispatch(0, threadGroupsX, 1, threadGroupsX);
 
         GenerationManager.voxelData.SetBuffer(1, "specialBlocksBuffer", genBuffer.specialBlocksBuffer);
         GenerationManager.voxelData.SetBuffer(1, "heightMap", genBuffer.heightMap);
         GenerationManager.voxelData.SetBuffer(1, "voxelArray", genBuffer.noiseBuffer);
         GenerationManager.voxelData.SetBuffer(1, "count", genBuffer.countBuffer);
-        GenerationManager.voxelData.Dispatch(1, xThreads, yThreads, xThreads);
+        GenerationManager.voxelData.Dispatch(1, threadGroupsX, threadGroupsY, threadGroupsX);
     }
 
     private void ShutDown()
