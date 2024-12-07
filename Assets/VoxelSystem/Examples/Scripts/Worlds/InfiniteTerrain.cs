@@ -110,8 +110,8 @@ public class InfiniteTerrain : World
         biomesArray.SetData(biomes);
 
 
-        GenerationManager.voxelData.SetBool("generateCaves", true);
-        GenerationManager.voxelData.SetBool("forceFloor", true);
+        GenerationManager.voxelData.SetBool("generateCaves", false);
+        GenerationManager.voxelData.SetBool("forceFloor", false);
 
         GenerationManager.voxelData.SetInt("maxHeight", World.WorldSettings.maxHeight);
         GenerationManager.voxelData.SetInt("oceanHeight", 42);

@@ -53,6 +53,15 @@ float3 AppproximateZeroCrossing(float3 adjacentPos, float3 adjacency)
         roundedDown = floor(pnt);
         stepF = (pnt - roundedDown) * 4;
         step = (int3) stepF;
+        if (roundedDown.x < 0 || roundedDown.x >= chunkSizeX ||
+            roundedDown.y < 0 || roundedDown.y >= chunkSizeY ||
+            roundedDown.z < 0 || roundedDown.z >= chunkSizeX)
+        {
+            // If we're out of range, we can't reliably determine zero-crossing here.
+            // Either break out or just continue to next increment.
+            // Here we'll break, meaning no zero-crossing found:
+            break;
+        }
 
         if (!initial)
         {
@@ -82,6 +91,12 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
     
     if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
+
+    // if (id.x < margin || id.x >= margin + chunkSize ||
+    //     id.z < margin || id.z >= margin + chunkSize)
+    // {
+    //     return; // Skip faces outside the core area
+    // }
     
     Voxel block = voxelArray[flattenCoord(id)];
     
@@ -139,7 +154,6 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
 
     position /= crossings;
     
-    // position += chunkPosition;
     cellVertex v;
     
     v.pnt = position;
@@ -156,6 +170,12 @@ void SumNormals(uint3 i : SV_DispatchThreadID)
     float3 id = float3(i);
     if (!smoothNormals || any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
+
+    // if (id.x < margin || id.x >= margin + chunkSize ||
+    //     id.z < margin || id.z >= margin + chunkSize)
+    // {
+    //     return; // Skip faces outside the core area
+    // }
     
     int blockID = voxelArray[flattenCoord(id)].getId();
     if (blockID == 0)
@@ -206,6 +226,12 @@ void GenerateFaces(uint3 i : SV_DispatchThreadID)
     float3 id = float3(i);
     if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
+        
+    // if (id.x < margin || id.x >= margin + chunkSize ||
+    //     id.z < margin || id.z >= margin + chunkSize)
+    // {
+    //     return; // Skip faces outside the core area
+    // }
     
     Voxel block = voxelArray[flattenCoord(id)];
     int blockID = block.getId();

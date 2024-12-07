@@ -31,9 +31,11 @@ public class Chunk : MonoBehaviour
     private bool isRendered;
 
     public bool IsRendered => isRendered;
+    int chunkSize;
     public Chunk(int size)
     {
         voxelArray = new Voxel[size, size, size];
+        chunkSize = size;
     }
 
     public void Render()
@@ -155,6 +157,15 @@ public class Chunk : MonoBehaviour
         //Ensure modified voxels are added to the noiseBuffer to be meshed, must be done before active voxels are calculated so that the data exists
         foreach (var kvp in World.Instance.modifiedVoxels[chunkPosition])
         {
+            Vector3 pos = kvp.Key; // or whatever your coordinate is
+            int x = (int)pos.x; int y = (int)pos.y; int z = (int)pos.z;
+            if (x < 0 || x >= chunkSize ||
+                y < 0 || y >= chunkSize ||
+                z < 0 || z >= chunkSize)
+            {
+                // Skip this voxel or adjust coordinate mapping
+                continue;
+            }
             noiseBuffer.voxelArray[kvp.Key] = kvp.Value;
         }
 
@@ -224,10 +235,10 @@ public class Chunk : MonoBehaviour
         mesh.indexFormat = IndexFormat.UInt32;
         mesh.subMeshCount = 2;
 
-        for (int i = 0; i < meshData.verts.Length; i++)
-        {
-            meshData.verts[i] -= chunkPosition;
-        }
+        // for (int i = 0; i < meshData.verts.Length; i++)
+        // {
+        //     meshData.verts[i] -= chunkPosition;
+        // }
 
         mesh.SetVertices(meshData.verts, 0, faceCount[2]);
 

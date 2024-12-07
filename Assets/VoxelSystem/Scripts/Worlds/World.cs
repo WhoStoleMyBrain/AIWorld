@@ -586,8 +586,16 @@ public class WorldSettings
     public int renderDistance = 32;
     public bool smoothNormals = false;
     public bool useTextures = false;
+
+    // New margin field
+    public int margin = 5;
+    // Adjusted properties
+    public int ChunkSizeWithMarginX
+    {
+        get { return chunkSize + margin * 2; }
+    }
     public int ChunkCount
     {
-        get { return (chunkSize + 5) * (maxHeight + 1) * (chunkSize + 5); }
+        get { return ChunkSizeWithMarginX * (maxHeight + 1) * ChunkSizeWithMarginX; }
     }
 }

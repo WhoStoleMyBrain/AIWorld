@@ -33,18 +33,22 @@ public static class GenerationManager
 
         voxelContouring = contouring;
 
-        xThreads = World.WorldSettings.chunkSize / 8 + 1;
+        xThreads = World.WorldSettings.ChunkSizeWithMarginX / 8 + 1;
         yThreads = World.WorldSettings.maxHeight / 8;
 
         VoxelDetails[] convertedVoxelDetails = getVoxelDetails();
         voxelColorsArray = new ComputeBuffer(convertedVoxelDetails.Length, 12);
         voxelColorsArray.SetData(convertedVoxelDetails);
 
-        voxelData.SetInt("chunkSizeX", World.WorldSettings.chunkSize);
-        voxelData.SetInt("chunkSizeY", World.WorldSettings.maxHeight);
+        voxelData.SetInt("chunkSizeX", World.WorldSettings.ChunkSizeWithMarginX);
+        voxelData.SetInt("chunkSizeY", World.WorldSettings.maxHeight + 1);
+        voxelData.SetInt("chunkSize", World.WorldSettings.chunkSize);
+        voxelData.SetInt("margin", World.WorldSettings.margin);
 
-        voxelContouring.SetInt("chunkSizeX", World.WorldSettings.chunkSize);
-        voxelContouring.SetInt("chunkSizeY", World.WorldSettings.maxHeight);
+        voxelContouring.SetInt("chunkSizeX", World.WorldSettings.ChunkSizeWithMarginX);
+        voxelContouring.SetInt("chunkSizeY", World.WorldSettings.maxHeight + 1);
+        voxelContouring.SetInt("chunkSize", World.WorldSettings.chunkSize);
+        voxelContouring.SetInt("margin", World.WorldSettings.margin);
         voxelContouring.SetBool("smoothNormals", World.WorldSettings.smoothNormals);
         voxelContouring.SetBool("useTextures", World.WorldSettings.useTextures);
         voxelContouring.SetBuffer(2, "voxelColors", voxelColorsArray);
@@ -301,22 +305,27 @@ public class GenerationBuffer : IDisposable
 
     public GenerationBuffer()
     {
+        int chunkSizeX = World.WorldSettings.ChunkSizeWithMarginX;
+        int chunkY = World.WorldSettings.maxHeight + 1; // or just maxHeight if you prefer indexing
+        int volume = chunkSizeX * chunkY * chunkSizeX;
         specialBlocksBuffer = new ComputeBuffer(64, 16);
-        int heightMapSize = World.WorldSettings.chunkSize * World.WorldSettings.chunkSize;
+        int heightMapSize = chunkSizeX * chunkSizeX;
         heightMap = new ComputeBuffer(heightMapSize, sizeof(float) * 2);
         countBuffer = new ComputeBuffer(5, 4);
         ClearCountBuffer();
 
         voxelArray = new IndexedArray<Voxel>();
-        noiseBuffer = new ComputeBuffer(World.WorldSettings.ChunkCount, 12);
+        voxelArray.array = new Voxel[volume];
+        noiseBuffer = new ComputeBuffer(volume, 12);
 
         int maxTris = World.WorldSettings.chunkSize * World.WorldSettings.maxHeight * World.WorldSettings.chunkSize / 3;
         //width*height*width*faces*tris
         int maxVertices = World.WorldSettings.smoothNormals ? maxTris * 2 : maxTris * 4;
         int maxNormals = World.WorldSettings.smoothNormals ? maxVertices : 1;
+
         vertexBuffer ??= new ComputeBuffer(maxVertices, 12);
         normalBuffer ??= new ComputeBuffer(maxNormals, 12);
-        cellVerticesBuffer ??= new ComputeBuffer(World.WorldSettings.ChunkCount, 32);
+        cellVerticesBuffer ??= new ComputeBuffer(volume, 32);
         colorBuffer ??= new ComputeBuffer(maxVertices, 16);
         indexBuffer ??= new ComputeBuffer(maxTris * 3, 4);
         transparentIndexBuffer ??= new ComputeBuffer(maxTris * 3, 4);

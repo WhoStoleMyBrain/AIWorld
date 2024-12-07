@@ -20,6 +20,7 @@ uint oceanHeight;
 int biomeCount;
 int seed;
 
+
 uint flattenHeightMap(float2 idx)
 {
     return idx.x + idx.y * chunkSizeX;
@@ -107,10 +108,9 @@ void GenHeightMap(uint3 i : SV_DispatchThreadID)
         return;
     
     float2 posXZ = id + chunkPosition.xz + seedOffset.xz;
-    
     float trueHeight, density;
     int biomeIndex;
-    getDensityAtPoint(float3(posXZ, 0), trueHeight, biomeIndex);
+    getDensityAtPoint(float3(posXZ.x, 0, posXZ.y), trueHeight, biomeIndex);
    
     heightMap[(uint)(id.x + id.y * chunkSizeX)] = float2(trueHeight, asfloat(biomeIndex));
 }
@@ -150,7 +150,7 @@ void FillArray(uint3 i : SV_DispatchThreadID)
         voxelId = ida;
     
 
-    if (id.y < (int) oceanHeight - 1 && voxelId == 0)
+    if (pos.y < (int) oceanHeight - 1 && voxelId == 0)
     {
         voxelId = 240;
     }
@@ -213,7 +213,7 @@ void FillArray(uint3 i : SV_DispatchThreadID)
     
     
     
-    if (voxelId != 0 && voxelId != 240)
+    if (voxelId != 0)
         InterlockedAdd(count[0], 1);
     
     vox.setId(voxelId);

@@ -2,8 +2,9 @@
 
 int chunkSizeX;
 int chunkSizeY;
+int chunkSize;
 float3 chunkPosition;
-
+int margin;
 
 RWStructuredBuffer<Voxel> voxelArray;
 RWStructuredBuffer<uint> count;
