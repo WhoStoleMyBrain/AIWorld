@@ -71,93 +71,6 @@ public abstract class World : MonoBehaviour
 
     }
 
-    public void QueueOctreeChunkForRendering(OctreeNode node)
-    {
-        if (!node.IsLeaf) return;
-
-        if (node.Chunk == null)
-        {
-            node.Chunk = GenerateChunk(node.Bounds.center);
-        }
-        GenerationManager.EnqueuePosToGenerate(node.Bounds.center);
-    }
-
-
-    // Insert a chunk into the octree
-    public void InsertChunk(Vector3 chunkPosition)
-    {
-        InsertChunkRecursive(rootNode, chunkPosition);
-    }
-
-    private void InsertChunkRecursive(OctreeNode node, Vector3 chunkPosition)
-    {
-        if (node.IsLeaf)
-        {
-            if (node.Chunk == null)
-            {
-                node.Chunk = new Chunk(WorldSettings.chunkSize);
-            }
-            return;
-        }
-
-        foreach (var child in node.Children)
-        {
-            if (child.Bounds.Contains(chunkPosition))
-            {
-                InsertChunkRecursive(child, chunkPosition);
-                break;
-            }
-        }
-    }
-
-    // private void PopulateOctreeWithChunks()
-    // {
-    //     Debug.Log("Starting PopulateOctreeWithChunks");
-    //     TraverseOctree(rootNode, node =>
-    //     {
-    //         if (node == null)
-    //         {
-    //             Debug.LogError("Encountered a null node during octree traversal.");
-    //             return;
-    //         }
-
-    //         if (node.IsLeaf)
-    //         {
-    //             if (node.Bounds != null)
-    //             {
-    //                 try
-    //                 {
-    //                     node.Chunk = GenerateChunk(node.Bounds.center);
-    //                     // node.Chunk = GenerateChunk(node.Bounds.center, true);
-    //                     GenerationManager.GenerateChunk(node); // node.UpdateAggregates should only be called when the full tree is present
-    //                     QueueOctreeChunkForRendering(node);
-    //                 }
-    //                 catch (Exception ex)
-    //                 {
-    //                     Debug.LogError($"Error generating chunk at {node.Bounds.center}: {ex.Message}");
-    //                 }
-    //             }
-    //             else
-    //             {
-    //                 Debug.LogError("Node.Bounds is null for a leaf node.");
-    //             }
-    //         }
-    //     });
-    //     Debug.Log("Finished PopulateOctreeWithChunks");
-    // }
-
-    // public Chunk GetChunk(Vector3 pos, bool enqueue = false)
-    // {
-    //     if (chunkPool.Count > 0)
-    //     {
-    //         return chunkPool.Dequeue();
-    //     }
-    //     else
-    //     {
-    //         return GenerateChunk(pos, enqueue);
-    //     }
-    // }
-
     public void TraverseOctree(OctreeNode node, Action<OctreeNode> action)
     {
         action.Invoke(node);
@@ -173,11 +86,21 @@ public abstract class World : MonoBehaviour
     {
         Debug.Log("Starting InitializeOctree");
         Vector3 worldCenter = Vector3.zero;
-        Vector3 worldSize = new Vector3(256, 256, 256); // 32*32=1024 // I think I need to start with a cube, otherwise I could not hold cubic chunks in the octree
+
+        // Determine the maximum dimension to create a cube
+        // horizontalExtent = chunkSize * renderDistance for both X and Z
+        // Compare it to maxHeight for Y
+        float horizontalExtent = WorldSettings.chunkSize * WorldSettings.renderDistance;
+        float largestDimension = Mathf.Max(horizontalExtent, WorldSettings.maxHeight);
+
+        // Create a cubic world size, ensuring a cube that covers everything
+        Vector3 worldSize = new Vector3(largestDimension, largestDimension, largestDimension);
+
         rootNode = new OctreeNode(new Bounds(worldCenter, worldSize), WorldSettings.chunkSize);
         GenerateOctreeStructure(rootNode);
         Debug.Log("Finished InitializeOctree");
     }
+
 
     public void GenerateOctreeStructure(OctreeNode node)
     {
@@ -199,37 +122,8 @@ public abstract class World : MonoBehaviour
     public void Update()
     {
         GenerationManager.Tick(rootNode);
-        // lock (cameraPosLock)
-        // {
-        //     Vector3 cameraChunkPos = lastUpdatedPosition;
-        //     float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
-
-        //     // Call ProcessRendering to ensure chunks within range are rendered
-        //     GenerationManager.ProcessRendering(rootNode, cameraChunkPos, renderDistanceInWorldUnits);
-        // }
-
+        
         DoUpdate();
-
-        // for (int x = 0; x < maxChunksToProcessPerFrame * 2; x++)
-        // {
-        //     if (x < maxChunksToProcessPerFrame && chunksNeedRegenerated.Count > 0)
-        //     {
-        //         var contToMake = chunksNeedRegenerated.Peek();
-        //         if (activeChunks.ContainsKey(contToMake) && activeChunks[contToMake].generationState == Chunk.GeneratingState.Idle)
-        //         {
-        //             chunksNeedRegenerated.Dequeue();
-        //             Chunk chunk = activeChunks[contToMake];
-        //             chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
-        //             GenerationManager.GenerateChunk(contToMake);
-        //         }
-        //         else
-        //         {
-        //             chunksNeedRegenerated.Dequeue();
-        //             chunksNeedRegenerated.Enqueue(contToMake);
-        //         }
-        //     }
-        // }
-
     }
 
     public void TickLoop()
@@ -242,10 +136,6 @@ public abstract class World : MonoBehaviour
         }
     }
 
-    // Generate a chunk (placeholder for actual chunk initialization)
-
-    // In World.cs
-
     public Chunk GenerateChunk(Vector3 position, bool enqueue = true)
     {
         // This method must only be called from the main thread
@@ -255,8 +145,6 @@ public abstract class World : MonoBehaviour
         chunk.Initialize(worldMaterials, position);
         return chunk;
     }
-
-
 
     public virtual void DoTick() { }
 
@@ -314,9 +202,9 @@ public abstract class World : MonoBehaviour
                 continue;
 
             if (direction[i] < 0)
-                pos[i] = (WorldSettings.chunkSize) + pos[i];
+                pos[i] = WorldSettings.chunkSize + pos[i];
             if (direction[i] > 0)
-                pos[i] = pos[i] - (WorldSettings.chunkSize);
+                pos[i] = pos[i] - WorldSettings.chunkSize;
         }
 
         return pos;
@@ -343,16 +231,6 @@ public abstract class World : MonoBehaviour
             else
                 modifiedVoxels[chunkPosition][localPos] = value;
         }
-
-        // if (activeChunks.ContainsKey(chunkPosition))
-        // {
-        //     Chunk c = activeChunks[chunkPosition];
-        //     if (c.chunkState != Chunk.ChunkState.WaitingToMesh)
-        //     {
-        //         c.chunkState = Chunk.ChunkState.WaitingToMesh;
-        //         chunksNeedRegenerated.Enqueue(c.chunkPosition);
-        //     }
-        // }
     }
 
     public bool GetVoxelAtCoord(Vector3 chunkPosition, Vector3 voxelPosition, out Voxel value)
@@ -599,8 +477,4 @@ public class WorldSettings
     {
         get { return chunkSize + marginY * 2; } // vertical dimension with margin
     }
-    // public int ChunkCount
-    // {
-    //     get { return ChunkSizeWithMarginX * ChunkSizeWithMarginY * ChunkSizeWithMarginX; }
-    // }
 }

@@ -14,22 +14,15 @@ public class InfiniteTerrain : World
     public Biome[] biomes;
     public Foliage[] foliage;
     public Structure[] structures;
-
     public int seed;
-
     public Transform mainCamera;
-    // private Vector3 lastUpdatedPosition;
-
 
     //This will contain all modified voxels, structures, whatnot for all chunks, and will effectively be our saving mechanism
     public Queue<Chunk> chunkPool;
-    // ConcurrentQueue<Vector3> chunksNeedCreation = new ConcurrentQueue<Vector3>();
-    // ConcurrentQueue<Vector3> deactiveChunks = new ConcurrentQueue<Vector3>();
     ConcurrentQueue<OctreeNode> nodeNeedsChunkCreation = new ConcurrentQueue<OctreeNode>();
     private ConcurrentQueue<OctreeNode> nodesToCreateChunks = new ConcurrentQueue<OctreeNode>();
     private ConcurrentQueue<OctreeNode> nodesToDispose = new ConcurrentQueue<OctreeNode>();
     ComputeBuffer biomesArray;
-    int mainThreadID;
     private Vector3 previouslyCheckedPosition;
 
     bool performedFirstPass = false;
@@ -41,66 +34,9 @@ public class InfiniteTerrain : World
     {
         World.onShutdown += ShutDown;
         InitializeWorld();
-        // InitializeOctree();
-        CheckIfChunksArePresent();
         renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
         renderThread.Start();
         // Start rendering thread
-    }
-
-    public void CheckIfChunksArePresent()
-    {
-        Debug.Log("Start CheckIfChunksArePresent");
-        Chunk tmpChunk = GetChunkFromLeafNode(rootNode);
-        if (tmpChunk != null)
-        {
-            Debug.Log("Found Chunk? " + tmpChunk.chunkPosition);
-            Debug.Log("Found Chunk? " + tmpChunk.chunkState);
-            // Debug.Log("Found Chunk? " + tmpChunk.ContainsWater());
-        }
-        Debug.Log("Finished CheckIfChunksArePresent");
-    }
-
-    public Chunk GetChunkFromLeafNode(OctreeNode node)
-    {
-        if (node == null)
-        {
-            Debug.LogWarning("Provided node is null.");
-            return null;
-        }
-
-        // Base case: If this node is a leaf, return its chunk (if it exists).
-        if (node.IsLeaf)
-        {
-            if (node.Chunk != null)
-            {
-                return node.Chunk;
-            }
-            else
-            {
-                Debug.LogWarning("Leaf node does not contain a chunk.");
-                return null;
-            }
-        }
-
-        // Recursive case: Traverse all children and look for a chunk in the leaf nodes.
-        if (node.Children != null)
-        {
-            foreach (OctreeNode child in node.Children)
-            {
-                if (child != null) // Safety check for uninitialized children
-                {
-                    Chunk foundChunk = GetChunkFromLeafNode(child);
-                    if (foundChunk != null)
-                    {
-                        return foundChunk; // Return as soon as a valid chunk is found
-                    }
-                }
-            }
-        }
-        // No chunk was found in the subtree.
-        Debug.LogWarning("No chunk found in the subtree starting from the given node.");
-        return null;
     }
 
     public override void InitializeDensityShader()
@@ -134,8 +70,6 @@ public class InfiniteTerrain : World
 
         chunkPool = new Queue<Chunk>();
         meshDataPool = new Queue<MeshData>();
-
-        mainThreadID = Thread.CurrentThread.ManagedThreadId;
 
         Debug.Log("Finished InitializeWorld");
     }
@@ -193,16 +127,7 @@ public class InfiniteTerrain : World
             }
             chunksProcessed++;
         }
-        // GenerationManager.ProcessRendering();
-
-        // if (!initialGenerationComplete && chunksNeedRegenerated.Count == 0 && chunksNeedCreation.Count == 0)
-        // {
-        //     onGenerationComplete?.Invoke();
-        //     initialGenerationComplete = true;
-        // }
     }
-
-    // In InfiniteTerrain.cs
 
     private void RenderChunksLoop()
     {
@@ -244,20 +169,14 @@ public class InfiniteTerrain : World
                         }
                         else if (node.Chunk != null)
                         {
-                            // Unrender and dispose of chunks that are out of range
                             if (node.Chunk.IsRendered)
                             {
                                 nodesToDispose.Enqueue(node);
-                                // node.Chunk.Unrender();
                             }
-                            //     node.Chunk.Dispose();
-                            //     node.Chunk = null;
-                            //     node.Chunk.Unrender();
                         }
                     }
                 });
             }
-
             if (!performedFirstPass)
                 performedFirstPass = true;
 
@@ -266,11 +185,7 @@ public class InfiniteTerrain : World
         Profiler.EndThreadProfiling();
     }
 
-
-
-
     #region Chunk Pooling
-
 
     #endregion
 

@@ -343,8 +343,6 @@ void InitializeVertices(uint3 id : SV_DispatchThreadID)
     uint3 size = uint3((uint)chunkSizeX, (uint)chunkSizeY, (uint)chunkSizeX);
     if (any(id >= size))
         return;
-
-
     cellVertex emptyV;
     emptyV.pnt = float3(-9999, -9999, -9999); // sentinel
     emptyV.normal = float3(0,0,0);
