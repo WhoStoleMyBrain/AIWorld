@@ -2,6 +2,7 @@
 #pragma kernel CalculateVertices
 #pragma kernel SumNormals
 #pragma kernel GenerateFaces
+#pragma kernel InitializeVertices
 #include "VoxelValues.cginc"
 #include "SharedVariables.cginc"
 
@@ -47,8 +48,6 @@ float3 AppproximateZeroCrossing(float3 adjacentPos, float3 adjacency)
     float t = 0, currentT = 0, increment = .25;
     bool startDensity = false;
     bool initial = false;
-    bool differenceFound = false;
-    
     while (currentT <= 1)
     {
         pnt = adjacentPos + (adjacency - adjacentPos) * currentT;
@@ -64,32 +63,23 @@ float3 AppproximateZeroCrossing(float3 adjacentPos, float3 adjacency)
             // Here we'll break, meaning no zero-crossing found:
             break;
         }
-        bool currentDensity = voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z);
-        
+
         if (!initial)
         {
-            startDensity = currentDensity;
+            startDensity = voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z);
             initial = true;
         }
         else
         {
-            if (currentDensity != startDensity)
+            if (voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z) != startDensity)
             {
                 t = currentT;
-                differenceFound = true;
                 break;
             }
 
         }
 
         currentT += increment;
-    }
-    if (!differenceFound)
-    {
-        // Return a sentinel position that indicates "no crossing"
-        // For example, return a large invalid coordinate or just return adjacentPos
-        // and handle it in the caller. Better: return adjacentPos without increment to indicate no crossing.
-        return float3(-9999,-9999,-9999); // A sentinel value
     }
     return adjacentPos + (adjacency - adjacentPos) * t;
 }
@@ -156,15 +146,8 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
             if (adjacentCellId != adjacentCellBId)
             {
                 float3 adapt = AppproximateZeroCrossing(adjacentCell, adjacentCellB);
-                if (adapt.x == -9999 && adapt.y == -9999 && adapt.z == -9999)
-                {
-                    // No difference found, skip
-                }
-                else
-                {
-                    position += adapt;
-                    crossings++;
-                }
+                position += adapt;
+                crossings++;
             }
 
         }
@@ -172,10 +155,15 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
     
     if (crossings == 0)
     {
-        // No zero-crossings means we couldn't find a valid vertex position.
-        // Just return and do not set a cellVertex for this voxel.
+        cellVertex invalidV;
+        invalidV.pnt = float3(-9999, -9999, -9999);
+        invalidV.normal = float3(0,0,0);
+        invalidV.sharedCount = 0;
+        invalidV.index = -1;
+        cellVertices[flattenCoord(id)] = invalidV;
         return;
     }
+    
 
     position /= crossings;
     
@@ -300,35 +288,68 @@ void GenerateFaces(uint3 i : SV_DispatchThreadID)
 
         if (block.isTransparent() && voxelArray[flattenCoord(id + voxelFaceChecks[face])].isTransparent())
             continue;
-       
-            
-            InterlockedAdd(count[2], 6, vertCount);
-        
-            if (blockID != 240)
-                InterlockedAdd(count[3], 6, triCount);
-            else
-                InterlockedAdd(count[4], 6, triCount);
-            
+
+        bool validFace = true;
+        cellVertex cvList[6];
         for (int k = 0; k < 6; k++)
         {
-
             cellVertex cv = cellVertices[flattenCoord(id + voxelVertices[voxelTrisMapped[face][k]])];
-            vertexBuffer[vertCount + k] = cv.pnt;
+            if (cv.index == -1 && cv.pnt.x == -9999)
+            {
+                validFace = false;
+                break;
+            }
+            cvList[k] = cv;
+        }
+        
+        if (!validFace)
+        {
+            // Do not increment counts, just skip
+            continue;
+        }
+            
+        InterlockedAdd(count[2], 6, vertCount);
+    
+        if (blockID != 240)
+            InterlockedAdd(count[3], 6, triCount);
+        else
+            InterlockedAdd(count[4], 6, triCount);
+            
+        
+        for (int j = 0; j < 6; j++) {
+            vertexBuffer[vertCount + j] = cvList[j].pnt;
             
             if (smoothNormals)
-                normalBuffer[vertCount + k] = normalize(cv.normal / cv.sharedCount);
+                normalBuffer[vertCount + j] = normalize(cvList[j].normal / cvList[j].sharedCount);
             
-            color.b = voxelUVs[voxelTris[k]].x;
-            color.a = voxelUVs[voxelTris[k]].y;
-            colorBuffer[vertCount + k] = color;
+            color.b = voxelUVs[voxelTris[j]].x;
+            color.a = voxelUVs[voxelTris[j]].y;
+            colorBuffer[vertCount + j] = color;
             if (blockID != 240)
-                indexBuffer[triCount + k] = vertCount + k;
+                indexBuffer[triCount + j] = vertCount + j;
             else
-                transparentIndexBuffer[triCount + k] = vertCount + k;
+                transparentIndexBuffer[triCount + j] = vertCount + j;
         }
         
         //Calculate this faces normal - add it to the cellVertex normal
         
 
     }
+}
+
+[numthreads(8,8,8)]
+void InitializeVertices(uint3 id : SV_DispatchThreadID)
+{
+    uint3 size = uint3((uint)chunkSizeX, (uint)chunkSizeY, (uint)chunkSizeX);
+    if (any(id >= size))
+        return;
+
+
+    cellVertex emptyV;
+    emptyV.pnt = float3(-9999, -9999, -9999); // sentinel
+    emptyV.normal = float3(0,0,0);
+    emptyV.sharedCount = 0;
+    emptyV.index = -1;
+
+    cellVertices[flattenCoord(id)] = emptyV;
 }

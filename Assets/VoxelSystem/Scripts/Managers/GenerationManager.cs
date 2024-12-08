@@ -149,6 +149,9 @@ public static class GenerationManager
 
     static void Contour(OctreeNode node, GenerationBuffer genBuffer)
     {
+        voxelContouring.SetBuffer(3, "cellVertices", genBuffer.cellVerticesBuffer);
+        voxelContouring.Dispatch(3, xThreads, yThreads, xThreads); // sets default values all across the voxel array
+
         voxelContouring.SetVector("chunkPosition", node.Bounds.center);
         voxelContouring.SetBuffer(0, "voxelArray", genBuffer.noiseBuffer);
         voxelContouring.SetBuffer(0, "count", genBuffer.countBuffer);
