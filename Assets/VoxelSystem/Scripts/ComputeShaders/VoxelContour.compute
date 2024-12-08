@@ -47,6 +47,8 @@ float3 AppproximateZeroCrossing(float3 adjacentPos, float3 adjacency)
     float t = 0, currentT = 0, increment = .25;
     bool startDensity = false;
     bool initial = false;
+    bool differenceFound = false;
+    
     while (currentT <= 1)
     {
         pnt = adjacentPos + (adjacency - adjacentPos) * currentT;
@@ -62,23 +64,32 @@ float3 AppproximateZeroCrossing(float3 adjacentPos, float3 adjacency)
             // Here we'll break, meaning no zero-crossing found:
             break;
         }
-
+        bool currentDensity = voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z);
+        
         if (!initial)
         {
-            startDensity = voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z);
+            startDensity = currentDensity;
             initial = true;
         }
         else
         {
-            if (voxelArray[flattenCoord(roundedDown)].getVoxelDensity(step.x, step.y, step.z) != startDensity)
+            if (currentDensity != startDensity)
             {
                 t = currentT;
+                differenceFound = true;
                 break;
             }
 
         }
 
         currentT += increment;
+    }
+    if (!differenceFound)
+    {
+        // Return a sentinel position that indicates "no crossing"
+        // For example, return a large invalid coordinate or just return adjacentPos
+        // and handle it in the caller. Better: return adjacentPos without increment to indicate no crossing.
+        return float3(-9999,-9999,-9999); // A sentinel value
     }
     return adjacentPos + (adjacency - adjacentPos) * t;
 }
@@ -92,11 +103,12 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
     if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
 
-    // if (id.x < margin || id.x >= margin + chunkSize ||
-    //     id.z < margin || id.z >= margin + chunkSize)
-    // {
-    //     return; // Skip faces outside the core area
-    // }
+    if (id.x < margin - 1 || id.x > margin + chunkSize ||
+        id.z < margin - 1|| id.z > margin + chunkSize ||
+        id.y < marginY || id.y > marginY + chunkSize)
+    {
+        return; // Skip faces outside the core area
+    }
     
     Voxel block = voxelArray[flattenCoord(id)];
     
@@ -144,13 +156,26 @@ void CalculateVertices (uint3 i : SV_DispatchThreadID)
             if (adjacentCellId != adjacentCellBId)
             {
                 float3 adapt = AppproximateZeroCrossing(adjacentCell, adjacentCellB);
-                position += adapt;
-                crossings++;
+                if (adapt.x == -9999 && adapt.y == -9999 && adapt.z == -9999)
+                {
+                    // No difference found, skip
+                }
+                else
+                {
+                    position += adapt;
+                    crossings++;
+                }
             }
 
         }
     }
     
+    if (crossings == 0)
+    {
+        // No zero-crossings means we couldn't find a valid vertex position.
+        // Just return and do not set a cellVertex for this voxel.
+        return;
+    }
 
     position /= crossings;
     
@@ -171,11 +196,12 @@ void SumNormals(uint3 i : SV_DispatchThreadID)
     if (!smoothNormals || any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
 
-    // if (id.x < margin || id.x >= margin + chunkSize ||
-    //     id.z < margin || id.z >= margin + chunkSize)
-    // {
-    //     return; // Skip faces outside the core area
-    // }
+    if (id.x < margin - 1 || id.x > margin + chunkSize ||
+        id.z < margin - 1|| id.z > margin + chunkSize ||
+        id.y < marginY || id.y > marginY + chunkSize)
+    {
+        return; // Skip faces outside the core area
+    }
     
     int blockID = voxelArray[flattenCoord(id)].getId();
     if (blockID == 0)
@@ -227,11 +253,30 @@ void GenerateFaces(uint3 i : SV_DispatchThreadID)
     if (any(id >= float3(chunkSizeX, chunkSizeY, chunkSizeX)))
         return;
         
-    // if (id.x < margin || id.x >= margin + chunkSize ||
-    //     id.z < margin || id.z >= margin + chunkSize)
-    // {
-    //     return; // Skip faces outside the core area
-    // }
+    if (id.x < margin - 1 || id.x > margin + chunkSize ||
+        id.z < margin - 1|| id.z > margin + chunkSize ||
+        id.y < marginY || id.y > marginY + chunkSize)
+    {
+        return; // Skip faces outside the core area
+    }
+
+    // Compute world-space position of this voxel.
+    // chunkPosition is the center of the chunk.
+    float3 worldPos = chunkPosition - float3(chunkSizeX, chunkSizeY, chunkSizeX) * 0.5 + id;
+
+
+    // Compute this chunk’s vertical min and max based on its center position and chunkSizeY.
+    float halfHeight = chunkSizeY * 0.5;
+    float minY = chunkPosition.y - halfHeight;
+    float maxY = chunkPosition.y + halfHeight;
+
+    // If the voxel's world-space vertical position is not within this chunk’s vertical range,
+    // it means it's actually part of another chunk (above or below).
+    if (worldPos.y < minY || worldPos.y >= maxY)
+    {
+        return; // Don’t generate faces for voxels outside this chunk's vertical range.
+    }
+
     
     Voxel block = voxelArray[flattenCoord(id)];
     int blockID = block.getId();

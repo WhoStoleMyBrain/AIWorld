@@ -41,14 +41,16 @@ public static class GenerationManager
         voxelColorsArray.SetData(convertedVoxelDetails);
 
         voxelData.SetInt("chunkSizeX", World.WorldSettings.ChunkSizeWithMarginX);
-        voxelData.SetInt("chunkSizeY", World.WorldSettings.maxHeight + 1);
+        voxelData.SetInt("chunkSizeY", World.WorldSettings.ChunkSizeWithMarginY);
         voxelData.SetInt("chunkSize", World.WorldSettings.chunkSize);
         voxelData.SetInt("margin", World.WorldSettings.margin);
+        voxelData.SetInt("marginY", World.WorldSettings.marginY);
 
         voxelContouring.SetInt("chunkSizeX", World.WorldSettings.ChunkSizeWithMarginX);
-        voxelContouring.SetInt("chunkSizeY", World.WorldSettings.maxHeight + 1);
+        voxelContouring.SetInt("chunkSizeY", World.WorldSettings.ChunkSizeWithMarginY);
         voxelContouring.SetInt("chunkSize", World.WorldSettings.chunkSize);
         voxelContouring.SetInt("margin", World.WorldSettings.margin);
+        voxelContouring.SetInt("marginY", World.WorldSettings.marginY);
         voxelContouring.SetBool("smoothNormals", World.WorldSettings.smoothNormals);
         voxelContouring.SetBool("useTextures", World.WorldSettings.useTextures);
         voxelContouring.SetBuffer(2, "voxelColors", voxelColorsArray);

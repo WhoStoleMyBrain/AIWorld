@@ -588,14 +588,19 @@ public class WorldSettings
     public bool useTextures = false;
 
     // New margin field
-    public int margin = 5;
+    public int margin = 3;
+    public int marginY = 1;
     // Adjusted properties
     public int ChunkSizeWithMarginX
     {
         get { return chunkSize + margin * 2; }
     }
-    public int ChunkCount
+    public int ChunkSizeWithMarginY
     {
-        get { return ChunkSizeWithMarginX * (maxHeight + 1) * ChunkSizeWithMarginX; }
+        get { return chunkSize + marginY * 2; } // vertical dimension with margin
     }
+    // public int ChunkCount
+    // {
+    //     get { return ChunkSizeWithMarginX * ChunkSizeWithMarginY * ChunkSizeWithMarginX; }
+    // }
 }

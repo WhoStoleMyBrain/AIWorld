@@ -649,6 +649,18 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 414495109}
     - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
+      propertyPath: worldSettings.margin
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
+      propertyPath: worldSettings.marginY
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
+      propertyPath: worldSettings.chunkSize
+      value: 64
+      objectReference: {fileID: 0}
+    - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: worldSettings.useTextures
       value: 1
       objectReference: {fileID: 0}

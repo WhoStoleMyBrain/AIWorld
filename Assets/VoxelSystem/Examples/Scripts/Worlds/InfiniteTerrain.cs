@@ -339,9 +339,10 @@ public class InfiniteTerrain : World
     public override void ExecuteDensityStage(GenerationBuffer genBuffer, int xThreads, int yThreads)
     {
 
-        int chunkSize = World.WorldSettings.chunkSize;
-        int threadGroupsX = Mathf.CeilToInt(chunkSize / 8.0f);
-        int threadGroupsY = Mathf.CeilToInt(World.WorldSettings.maxHeight / 8.0f);
+        int chunkSizeX = World.WorldSettings.ChunkSizeWithMarginX;
+        int chunkSizeY = World.WorldSettings.ChunkSizeWithMarginY;
+        int threadGroupsX = Mathf.CeilToInt(chunkSizeX / 8.0f);
+        int threadGroupsY = Mathf.CeilToInt(chunkSizeY / 8.0f);
         GenerationManager.voxelData.SetBuffer(2, "voxelArray", genBuffer.noiseBuffer);
         GenerationManager.voxelData.Dispatch(2, xThreads, yThreads, xThreads);
 
