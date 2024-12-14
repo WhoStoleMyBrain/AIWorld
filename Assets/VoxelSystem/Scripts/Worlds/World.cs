@@ -86,17 +86,10 @@ public abstract class World : MonoBehaviour
     {
         Debug.Log("Starting InitializeOctree");
         Vector3 worldCenter = Vector3.zero;
-
-        // Determine the maximum dimension to create a cube
-        // horizontalExtent = chunkSize * renderDistance for both X and Z
-        // Compare it to maxHeight for Y
-        float horizontalExtent = WorldSettings.chunkSize * WorldSettings.renderDistance;
-        float largestDimension = Mathf.Max(horizontalExtent, WorldSettings.maxHeight);
-
         // Create a cubic world size, ensuring a cube that covers everything
-        Vector3 worldSize = new Vector3(largestDimension, largestDimension, largestDimension);
-
-        rootNode = new OctreeNode(new Bounds(worldCenter, worldSize), WorldSettings.chunkSize);
+        Vector3 worldSize = new Vector3(WorldSettings.maxHeight, WorldSettings.maxHeight, WorldSettings.maxHeight);
+        Bounds worldBounds = new Bounds(worldCenter, worldSize);
+        rootNode = new OctreeNode(worldBounds, WorldSettings.chunkSize);
         GenerateOctreeStructure(rootNode);
         Debug.Log("Finished InitializeOctree");
     }
@@ -104,8 +97,55 @@ public abstract class World : MonoBehaviour
 
     public void GenerateOctreeStructure(OctreeNode node)
     {
-        node.Subdivide();
+        node.Subdivide(WorldSettings.maxHeight);
     }
+
+    float SqrDistanceIgnoringY(Bounds bounds, Vector3 point)
+    {
+        float dx = 0f;
+        float dz = 0f;
+
+        // For X axis
+        if (point.x < bounds.min.x)
+            dx = bounds.min.x - point.x;
+        else if (point.x > bounds.max.x)
+            dx = point.x - bounds.max.x;
+
+        // For Z axis
+        if (point.z < bounds.min.z)
+            dz = bounds.min.z - point.z;
+        else if (point.z > bounds.max.z)
+            dz = point.z - bounds.max.z;
+
+        return dx * dx + dz * dz;
+    }
+
+
+    public void FindLeafNodesWithinDistance(OctreeNode node, Vector3 center, float maxDistance, List<OctreeNode> result)
+    {
+        float distSq = SqrDistanceIgnoringY(node.Bounds, center);
+        if (distSq > maxDistance * maxDistance)
+        {
+            return;
+        }
+
+        // If it's a leaf, we just add it
+        if (node.IsLeaf)
+        {
+            result.Add(node);
+            return;
+        }
+
+        // Otherwise, recurse into children
+        if (node.Children != null)
+        {
+            foreach (var child in node.Children)
+            {
+                FindLeafNodesWithinDistance(child, center, maxDistance, result);
+            }
+        }
+    }
+
 
     public abstract void OnStart();
 
@@ -122,7 +162,7 @@ public abstract class World : MonoBehaviour
     public void Update()
     {
         GenerationManager.Tick(rootNode);
-        
+
         DoUpdate();
     }
 
@@ -159,21 +199,14 @@ public abstract class World : MonoBehaviour
         }
         else
         {
-            Debug.Log("New MeshData");
             return GenerateMeshData(false);
         }
     }
 
     protected MeshData GenerateMeshData(bool enqueue = true)
     {
-
         MeshData meshData = new MeshData();
-
-        if (enqueue)
-        {
-            meshDataPool.Enqueue(meshData);
-        }
-
+        if (enqueue) meshDataPool.Enqueue(meshData);
         return meshData;
     }
 
@@ -235,24 +268,12 @@ public abstract class World : MonoBehaviour
 
     public bool GetVoxelAtCoord(Vector3 chunkPosition, Vector3 voxelPosition, out Voxel value)
     {
-        //Get the neighbor coords
         var neighbors = GetNeighborCoordsFromChunkVoxel(chunkPosition, voxelPosition);
-        bool canExistWithinChunk = CanExistWithinChunk(voxelPosition);
-
         bool voxelExists = false;
         value = new Voxel();
         //Check separate module dicts before modified
         if (ActiveVoxelModule.Exists)
         {
-            // if (canExistWithinChunk)
-            // {
-            // if (activeChunks.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels.ContainsKey(chunkPosition) && ActiveVoxelModule.activeVoxels[chunkPosition].ContainsKey(voxelPosition))
-            // {
-            //     voxelExists = true;
-            //     value = ActiveVoxelModule.activeVoxels[chunkPosition][voxelPosition];
-            // }
-            // }
-
             for (int i = 0; i < neighbors.Item2; i++)
             {
                 Vector3 x = convertOverageVectorIntoLocal(voxelPosition, neighbors.Item1[i] - chunkPosition);
@@ -260,8 +281,6 @@ public abstract class World : MonoBehaviour
                 {
                     continue;
                 }
-                // if (!activeChunks.ContainsKey(neighbors.Item1[i]))
-                //     continue;
                 if (!ActiveVoxelModule.activeVoxels.ContainsKey(neighbors.Item1[i]))
                     continue;
                 if (!ActiveVoxelModule.activeVoxels[neighbors.Item1[i]].ContainsKey(x))
@@ -271,18 +290,8 @@ public abstract class World : MonoBehaviour
                 break;
             }
         }
-
         if (voxelExists)
             return voxelExists;
-
-        // if (canExistWithinChunk)
-        // {
-        // if (activeChunks.ContainsKey(chunkPosition) && modifiedVoxels.ContainsKey(chunkPosition) && modifiedVoxels[chunkPosition].ContainsKey(voxelPosition))
-        // {
-        //     voxelExists = true;
-        //     value = modifiedVoxels[chunkPosition][voxelPosition];
-        // }
-        // }
 
         for (int i = 0; i < neighbors.Item2; i++)
         {
@@ -291,8 +300,6 @@ public abstract class World : MonoBehaviour
             {
                 continue;
             }
-            // if (!activeChunks.ContainsKey(neighbors.Item1[i]))
-            //     continue;
             if (!modifiedVoxels.ContainsKey(neighbors.Item1[i]))
                 continue;
             if (!modifiedVoxels[neighbors.Item1[i]].ContainsKey(x))
@@ -337,7 +344,6 @@ public abstract class World : MonoBehaviour
                     mod *= WorldSettings.chunkSize;
                     neighborPos[neighborCount++] = chunkPosition + (Vector3)mod;
                 }
-
             }
         }
         if (math.all(ind2 < chunkRange[0]))
@@ -348,7 +354,6 @@ public abstract class World : MonoBehaviour
         {
             neighborPos[neighborCount++] = chunkPosition + Vector3.forward * WorldSettings.chunkSize + Vector3.right * WorldSettings.chunkSize;
         }
-
         return (neighborPos, neighborCount);
     }
 
@@ -362,12 +367,8 @@ public abstract class World : MonoBehaviour
 
     public void SetVoxelAtCoord(Vector3 chunkPosition, Vector3 voxelPosition, Voxel value)
     {
-
         bool canPlaceWithinChunk = CanExistWithinChunk(voxelPosition);
-
         var neighbors = GetNeighborCoordsFromChunkVoxel(chunkPosition, voxelPosition);
-
-
         for (int i = 0; i < neighbors.Item2; i++)
         {
             Vector3 x = convertOverageVectorIntoLocal(voxelPosition, neighbors.Item1[i] - chunkPosition);
@@ -377,12 +378,10 @@ public abstract class World : MonoBehaviour
             }
             PlaceWithinChunk(neighbors.Item1[i], x, value);
         }
-
         if (canPlaceWithinChunk)
         {
             PlaceWithinChunk(chunkPosition, voxelPosition, value);
         }
-
     }
     #endregion
 

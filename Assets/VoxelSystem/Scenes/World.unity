@@ -658,11 +658,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: worldSettings.chunkSize
-      value: 64
+      value: 32
       objectReference: {fileID: 0}
     - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: worldSettings.useTextures
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
+      propertyPath: maxChunksToProcessPerFrame
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: worldSettings.smoothNormals
@@ -670,7 +674,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8910370624794705678, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
       propertyPath: worldSettings.renderDistance
-      value: 32
+      value: 16
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 953515657, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}

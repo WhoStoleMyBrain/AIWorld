@@ -16,8 +16,7 @@ public class InfiniteTerrain : World
     public Structure[] structures;
     public int seed;
     public Transform mainCamera;
-
-    //This will contain all modified voxels, structures, whatnot for all chunks, and will effectively be our saving mechanism
+    private HashSet<Vector3> activeChunks = new HashSet<Vector3>();
     public Queue<Chunk> chunkPool;
     ConcurrentQueue<OctreeNode> nodeNeedsChunkCreation = new ConcurrentQueue<OctreeNode>();
     private ConcurrentQueue<OctreeNode> nodesToCreateChunks = new ConcurrentQueue<OctreeNode>();
@@ -27,8 +26,8 @@ public class InfiniteTerrain : World
 
     bool performedFirstPass = false;
     Thread checkActiveChunks;
-    // bool initialGenerationComplete = false;
     private readonly object cameraPosLock = new object();
+    private object activeChunksLock = new object(); // add this field
 
     public override void OnStart()
     {
@@ -36,7 +35,6 @@ public class InfiniteTerrain : World
         InitializeWorld();
         renderThread = new Thread(RenderChunksLoop) { Priority = System.Threading.ThreadPriority.BelowNormal };
         renderThread.Start();
-        // Start rendering thread
     }
 
     public override void InitializeDensityShader()
@@ -44,7 +42,6 @@ public class InfiniteTerrain : World
         Biome[] biomes = getBiomes();
         biomesArray = new ComputeBuffer(biomes.Length, 56);
         biomesArray.SetData(biomes);
-
 
         GenerationManager.voxelData.SetBool("generateCaves", false);
         GenerationManager.voxelData.SetBool("forceFloor", false);
@@ -75,19 +72,15 @@ public class InfiniteTerrain : World
     }
     public override void DoUpdate()
     {
-
         if (mainCamera?.transform.position != lastUpdatedPosition)
         {
             lock (cameraPosLock)
             {
-                //Update position so our CheckActiveChunksLoop thread has it
                 lastUpdatedPosition = positionToChunkCoord(mainCamera.transform.position);
             }
         }
-        OctreeNode node;
         int chunksProcessed = 0;
-
-        // Process nodes that need chunk creation
+        OctreeNode node;
         while (chunksProcessed < maxChunksToProcessPerFrame && nodesToCreateChunks.TryDequeue(out node))
         {
             if (node.Chunk == null)
@@ -97,21 +90,23 @@ public class InfiniteTerrain : World
             }
             chunksProcessed++;
         }
-
         chunksProcessed = 0;
 
-        // Process nodes that need to be disposed
         while (chunksProcessed < maxChunksToProcessPerFrame && nodesToDispose.TryDequeue(out node))
         {
             if (node.Chunk != null)
             {
+                Debug.Log("Unrendering chunk at position: " + node.Bounds.center);
                 node.Chunk.Unrender();
                 node.Chunk.Dispose();
                 node.Chunk = null;
+                lock (activeChunksLock)
+                {
+                    activeChunks.Remove(node.Bounds.center);
+                }
             }
             chunksProcessed++;
         }
-
 
         chunksProcessed = 0;
         while (chunksProcessed < maxChunksToProcessPerFrame && nodeNeedsChunkCreation.TryDequeue(out node))
@@ -120,13 +115,118 @@ public class InfiniteTerrain : World
             {
                 node.Chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
                 GenerationManager.GenerateChunk(node);
+                lock (activeChunksLock)
+                {
+                    activeChunks.Add(node.Bounds.center);
+                }
             }
             else if (node.Chunk != null && node.Chunk.generationState == Chunk.GeneratingState.Idle && !node.Chunk.IsRendered)
             {
                 node.Chunk.Render();
+                lock (activeChunksLock)
+                {
+                    activeChunks.Add(node.Bounds.center);
+                }
             }
             chunksProcessed++;
         }
+    }
+
+    bool IsCircleFullyContained(Bounds bounds, float renderDistance, Vector3 worldPosition)
+    {
+        Vector3 min = bounds.min;
+        Vector3 max = bounds.max;
+        float cx = worldPosition.x;
+        float cz = worldPosition.z;
+
+        // Check if the circle defined by (cx, cz) and radius renderDistance
+        // fits entirely within the rectangular area [min.x, max.x] x [min.z, max.z]
+        float r = renderDistance;
+        return (cx - r >= min.x) & (cx + r <= max.x) & (cz - r >= min.z) & (cz + r <= max.z);
+    }
+
+    enum ExpandDirection
+    {
+        XDown,
+        XUp,
+        ZDown,
+        ZUp,
+        None
+    }
+
+    ExpandDirection GetNotFullyInCircleContainedDirections(Bounds bounds, float renderDistance, Vector3 worldPosition)
+    {
+        Vector3 min = bounds.min;
+        Vector3 max = bounds.max;
+        float cx = worldPosition.x;
+        float cz = worldPosition.z;
+
+        // Check if the circle defined by (cx, cz) and radius renderDistance
+        // fits entirely within the rectangular area [min.x, max.x] x [min.z, max.z]
+        float r = renderDistance;
+        if (cx - r < min.x)
+        {
+            return ExpandDirection.XDown;
+        }
+        if (cx + r > max.x)
+        {
+            return ExpandDirection.XUp;
+        }
+        if (cz - r < min.z)
+        {
+            return ExpandDirection.ZDown;
+        }
+        if (cz + r > max.z)
+        {
+            return ExpandDirection.ZUp;
+        }
+        return ExpandDirection.None;
+    }
+
+    private void ExpandRootNode(ExpandDirection expandDirection)
+    {
+        Bounds oldRootBounds = rootNode.Bounds;
+        float factorX = oldRootBounds.size.x < oldRootBounds.size.z ? 4 : 2;
+        float factorZ = oldRootBounds.size.x < oldRootBounds.size.z ? 2 : 4;
+        Vector3 newSize = new Vector3(oldRootBounds.size.x * factorX, oldRootBounds.size.y, oldRootBounds.size.z * factorZ); // hard coded: x dimension is only 2 chunks, y is 4 given that we are above maxHeight in size. Should always be the case here...
+        Bounds newBounds = new Bounds(oldRootBounds.center, newSize);
+        switch (expandDirection)
+        {
+            case ExpandDirection.XDown:
+                newBounds.center = oldRootBounds.center + new Vector3((float)(oldRootBounds.size.x * -0.5), 0, (float)(oldRootBounds.size.z * 0.5));
+                break;
+            case ExpandDirection.XUp:
+                newBounds.center = oldRootBounds.center + new Vector3((float)(oldRootBounds.size.x * 0.5), 0, (float)(oldRootBounds.size.z * -0.5));
+                break;
+            case ExpandDirection.ZDown:
+                newBounds.center = oldRootBounds.center + new Vector3((float)(oldRootBounds.size.x * -0.5), 0, (float)(oldRootBounds.size.z * -0.5));
+                break;
+            case ExpandDirection.ZUp:
+                newBounds.center = oldRootBounds.center + new Vector3((float)(oldRootBounds.size.x * 0.5), 0, (float)(oldRootBounds.size.z * 0.5));
+                break;
+            case ExpandDirection.None:
+                return;
+        }
+        OctreeNode newRootNode = new OctreeNode(newBounds, WorldSettings.chunkSize);
+        newRootNode.Subdivide(WorldSettings.maxHeight);
+        switch (expandDirection)
+        {
+            case ExpandDirection.XDown:
+                newRootNode.Children[factorX < factorZ ? 3 : 4] = rootNode;
+                break;
+            case ExpandDirection.XUp:
+                newRootNode.Children[factorX < factorZ ? 4 : 3] = rootNode;
+                break;
+            case ExpandDirection.ZDown:
+                newRootNode.Children[5] = rootNode;
+                break;
+            case ExpandDirection.ZUp:
+                newRootNode.Children[2] = rootNode;
+                break;
+            case ExpandDirection.None:
+                return;
+        }
+        rootNode = newRootNode;
     }
 
     private void RenderChunksLoop()
@@ -138,7 +238,6 @@ public class InfiniteTerrain : World
             {
                 previouslyCheckedPosition = lastUpdatedPosition;
                 Vector3 cameraChunkPos;
-
                 lock (cameraPosLock)
                 {
                     cameraChunkPos = lastUpdatedPosition;
@@ -146,43 +245,90 @@ public class InfiniteTerrain : World
 
                 float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
 
-                TraverseOctree(rootNode, node =>
+                // Step 0: Check if octree needs to be expanded, i.e. if any area from cameraChunkPos + renderDistance would fall outside of the root node bounds
+                if (!IsCircleFullyContained(rootNode.Bounds, renderDistanceInWorldUnits, cameraChunkPos))
                 {
-                    if (node.IsLeaf)
-                    {
-                        bool withinDistance = node.Bounds.SqrDistance(cameraChunkPos) < renderDistanceInWorldUnits * renderDistanceInWorldUnits;
+                    ExpandDirection expandDirection = GetNotFullyInCircleContainedDirections(rootNode.Bounds, renderDistanceInWorldUnits, cameraChunkPos);
+                    ExpandRootNode(expandDirection);
+                }
 
-                        if (withinDistance)
-                        {
-                            if (node.Chunk == null)
-                            {
-                                // Initialize the chunk and enqueue it for generation
-                                // node.Chunk = GenerateChunk(node.Bounds.center);
-                                // QueueOctreeChunkForRendering(node);
-                                nodesToCreateChunks.Enqueue(node);
-                            }
-                            else if (!node.Chunk.IsRendered && node.Chunk.generationState == Chunk.GeneratingState.Idle)
-                            {
-                                // node.Chunk.Render();
-                                nodesToCreateChunks.Enqueue(node);
-                            }
-                        }
-                        else if (node.Chunk != null)
-                        {
-                            if (node.Chunk.IsRendered)
-                            {
-                                nodesToDispose.Enqueue(node);
-                            }
-                        }
+                // Step 1: Query octree for leaf nodes in range
+                List<OctreeNode> nodesInRange = new List<OctreeNode>();
+                FindLeafNodesWithinDistance(rootNode, cameraChunkPos, renderDistanceInWorldUnits, nodesInRange);
+                // Convert these node positions to a set for quick checks
+                HashSet<Vector3> desiredActive = new HashSet<Vector3>();
+                foreach (var n in nodesInRange)
+                    desiredActive.Add(n.Bounds.center);
+                // Make a safe copy of activeChunks or lock while enumerating
+                Vector3[] activeSnapshot;
+                lock (activeChunksLock)
+                {
+                    activeSnapshot = new Vector3[activeChunks.Count];
+                    activeChunks.CopyTo(activeSnapshot);
+                }
+                // Step 2: Any currently active chunk not in desiredActive should be disposed
+                foreach (var cPos in activeSnapshot)
+                {
+                    if (!desiredActive.Contains(cPos))
+                    {
+                        // Find node by cPos if needed, or store node references in a dictionary
+                        // For simplicity, re-traverse or maintain a map from positions to nodes
+                        OctreeNode n = FindLeafNode(rootNode, cPos);
+                        if (n != null && n.Chunk != null && n.Chunk.IsRendered)
+                            nodesToDispose.Enqueue(n);
                     }
-                });
+                }
+
+                // Step 3: Any chunk in desiredActive not in activeChunks should be created
+                foreach (var n in nodesInRange)
+                {
+                    if (!activeChunks.Contains(n.Bounds.center))
+                    {
+                        // Debug.Log("Enqueued chunk for creation: " + n.Bounds.center);
+                        // Enqueue for creation
+                        nodesToCreateChunks.Enqueue(n);
+                    }
+                }
             }
             if (!performedFirstPass)
-                performedFirstPass = true;
-
+            {
+                Vector3 cameraChunkPos;
+                lock (cameraPosLock)
+                {
+                    cameraChunkPos = lastUpdatedPosition;
+                }
+                float renderDistanceInWorldUnits = WorldSettings.renderDistance * WorldSettings.chunkSize;
+                if (IsCircleFullyContained(rootNode.Bounds, renderDistanceInWorldUnits, cameraChunkPos))
+                {
+                    performedFirstPass = true;
+                }
+            }
             Thread.Sleep(500);
         }
         Profiler.EndThreadProfiling();
+    }
+
+    // Helper method to find a node by center position if needed
+    private OctreeNode FindLeafNode(OctreeNode node, Vector3 position)
+    {
+        // If node doesn't contain position at all, return null
+        if (!node.Bounds.Contains(position))
+            return null;
+
+        if (node.IsLeaf)
+            return node;
+
+        if (node.Children != null)
+        {
+            foreach (var child in node.Children)
+            {
+                var found = FindLeafNode(child, position);
+                if (found != null)
+                    return found;
+            }
+        }
+
+        return null;
     }
 
     #region Chunk Pooling
