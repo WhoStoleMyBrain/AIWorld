@@ -31,16 +31,7 @@ public class OctreeNode
             float factorZ = bounds.size.z / maxHeight;
             double scaleX = Math.Log(factorX, 2) - 1;
             double scaleZ = Math.Log(factorZ, 4) * 2 - 1; // *2 because we add rectangular structure. Z is per definition the longer side
-            // double trueUpscale = Math.Ceiling(Math.Max(scaleX, scaleZ));
             Bounds newBounds = new Bounds(bounds.center, new Vector3((float)(maxHeight * Math.Pow(2, scaleX)), bounds.size.y, (float)(maxHeight * Math.Pow(4, scaleZ))));
-            // Debug.Log("factorX: " + factorX);
-            // Debug.Log("factorZ: " + factorZ);
-            // Debug.Log("scaleX: " + scaleX);
-            // Debug.Log("scaleZ: " + scaleZ);
-            // Debug.Log("True Upscale: " + trueUpscale);
-            // Debug.Log("old Bounds: " + bounds);
-            // Debug.Log("maxHeight: " + maxHeight);
-            // Debug.Log("newBounds: " + newBounds);
             return newBounds;
         }
         return bounds;
@@ -53,7 +44,6 @@ public class OctreeNode
         // Stop subdividing if all dimensions match the chunk size
         if (Bounds.size.x <= ChunkSize || Bounds.size.y <= ChunkSize || Bounds.size.z <= ChunkSize)
         {
-            // Debug.Log("Leaf node with bounds: " + Bounds);
             IsLeaf = true;
             return;
         }
@@ -77,7 +67,6 @@ public class OctreeNode
                     Bounds childBounds = new Bounds(min + offset + size / 2, size);
 
                     Children[i] = new OctreeNode(childBounds, ChunkSize);
-                    // Debug.Log("Subdividing child of size: " + Children[i].Bounds);
                     Children[i].Subdivide(maxHeight); // Recursively subdivide each child
                 }
                 IsLeaf = false;
@@ -98,7 +87,6 @@ public class OctreeNode
                     Bounds childBounds = new Bounds(min + offset + size / 2, size);
 
                     Children[i] = new OctreeNode(childBounds, ChunkSize);
-                    // Debug.Log("Subdividing child of size: " + Children[i].Bounds);
                     Children[i].Subdivide(maxHeight); // Recursively subdivide each child
                 }
                 IsLeaf = false;
@@ -121,9 +109,7 @@ public class OctreeNode
                     (i & 4) == 0 ? 0 : size.z
                 );
                 Bounds childBounds = new Bounds(min + offset + size / 2, size);
-
                 Children[i] = new OctreeNode(childBounds, ChunkSize);
-                // Debug.Log("Subdividing child of size: " + Children[i].Bounds);
                 Children[i].Subdivide(maxHeight); // Recursively subdivide each child
             }
             IsLeaf = false;
