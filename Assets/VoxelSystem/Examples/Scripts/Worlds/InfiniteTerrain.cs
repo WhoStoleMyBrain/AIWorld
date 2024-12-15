@@ -96,7 +96,6 @@ public class InfiniteTerrain : World
         {
             if (node.Chunk != null)
             {
-                Debug.Log("Unrendering chunk at position: " + node.Bounds.center);
                 node.Chunk.Unrender();
                 node.Chunk.Dispose();
                 node.Chunk = null;
@@ -115,14 +114,6 @@ public class InfiniteTerrain : World
             {
                 node.Chunk.chunkState = Chunk.ChunkState.WaitingToMesh;
                 GenerationManager.GenerateChunk(node);
-                lock (activeChunksLock)
-                {
-                    activeChunks.Add(node.Bounds.center);
-                }
-            }
-            else if (node.Chunk != null && node.Chunk.generationState == Chunk.GeneratingState.Idle && !node.Chunk.IsRendered)
-            {
-                node.Chunk.Render();
                 lock (activeChunksLock)
                 {
                     activeChunks.Add(node.Bounds.center);
@@ -258,8 +249,13 @@ public class InfiniteTerrain : World
                 // Convert these node positions to a set for quick checks
                 HashSet<Vector3> desiredActive = new HashSet<Vector3>();
                 foreach (var n in nodesInRange)
+                {
+                    // Debug.Log("added to desiredActive: " + n.Bounds);
                     desiredActive.Add(n.Bounds.center);
+                }
                 // Make a safe copy of activeChunks or lock while enumerating
+
+
                 Vector3[] activeSnapshot;
                 lock (activeChunksLock)
                 {
@@ -276,6 +272,14 @@ public class InfiniteTerrain : World
                         OctreeNode n = FindLeafNode(rootNode, cPos);
                         if (n != null && n.Chunk != null && n.Chunk.IsRendered)
                             nodesToDispose.Enqueue(n);
+                        // else {
+                            // Debug.Log("not disposing of chunk at " + cPos + "even though we should...");
+                            // if (n != null) Debug.Log(n);
+                            // if (n.Chunk != null) {
+                            //     Debug.Log(n.Chunk.chunkPosition);
+                            //     Debug.Log("is rendered: " + n.Chunk.IsRendered);
+                            // }
+                        // }
                     }
                 }
 
@@ -284,7 +288,6 @@ public class InfiniteTerrain : World
                 {
                     if (!activeChunks.Contains(n.Bounds.center))
                     {
-                        // Debug.Log("Enqueued chunk for creation: " + n.Bounds.center);
                         // Enqueue for creation
                         nodesToCreateChunks.Enqueue(n);
                     }

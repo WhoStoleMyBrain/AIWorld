@@ -66,10 +66,10 @@ public static class GenerationManager
         mainThreadID = Thread.CurrentThread.ManagedThreadId;
     }
 
-    public static void EnqueuePosToGenerate(Vector3 chunkPos)
-    {
-        generatedChunks.Enqueue(chunkPos);
-    }
+    // public static void EnqueuePosToGenerate(Vector3 chunkPos)
+    // {
+    //     generatedChunks.Enqueue(chunkPos);
+    // }
 
     public static void GenerateChunk(OctreeNode node, Action onComplete = null)
     {
@@ -84,6 +84,7 @@ public static class GenerationManager
         World.Instance.ExecuteDensityStage(genBuffer, xThreads, yThreads);
 
         // After ExecuteDensityStage and before contouring
+        // TODO CHeck ChunkContainsSolidVoxels method
         if (!ChunkContainsSolidVoxels(genBuffer))
         {
             // The chunk is empty; no need to contour or render
@@ -189,31 +190,31 @@ public static class GenerationManager
     //To be executed on main thread only
     public static void Tick(OctreeNode rootNode)
     {
-        Debug.Log("Running Generation Manager Tick");
-        if (generatedChunks.Count > 0)
-        {
-            for (int i = 0; i < maxActionsPerFrame; i++)
-            {
-                if (generatedChunks.TryDequeue(out var chunkPos))
-                {
-                    // Find the corresponding node in the octree
-                    OctreeNode targetNode = FindLeafNode(rootNode, chunkPos);
+        // Debug.Log("Running Generation Manager Tick");
+        // if (generatedChunks.Count > 0)
+        // {
+        //     for (int i = 0; i < maxActionsPerFrame; i++)
+        //     {
+        //         if (generatedChunks.TryDequeue(out var chunkPos))
+        //         {
+        //             // Find the corresponding node in the octree
+        //             OctreeNode targetNode = FindLeafNode(rootNode, chunkPos);
 
-                    if (targetNode != null && targetNode.IsLeaf && targetNode.Chunk != null)
-                    {
-                        GenerateChunk(targetNode);
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"Chunk at {chunkPos} not found or invalid in the octree.");
-                    }
-                }
-            }
-        }
-        else
-        {
-            Debug.Log("No generatedChunks present. Returning...");
-        }
+        //             if (targetNode != null && targetNode.IsLeaf && targetNode.Chunk != null)
+        //             {
+        //                 GenerateChunk(targetNode);
+        //             }
+        //             else
+        //             {
+        //                 Debug.LogWarning($"Chunk at {chunkPos} not found or invalid in the octree.");
+        //             }
+        //         }
+        //     }
+        // }
+        // else
+        // {
+        //     Debug.Log("No generatedChunks present. Returning...");
+        // }
     }
 
     private static OctreeNode FindLeafNode(OctreeNode node, Vector3 position)

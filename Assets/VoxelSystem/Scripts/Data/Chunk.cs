@@ -28,7 +28,7 @@ public class Chunk : MonoBehaviour
     public List<Vector3> blockPosToUpdate = new List<Vector3>();
 
     public GenerationBuffer generationBuffer;
-    private bool isRendered;
+    private bool isRendered = false;
 
     public bool IsRendered => isRendered;
     int chunkSize;
@@ -262,6 +262,7 @@ public class Chunk : MonoBehaviour
         World.Instance.ClearAndRequeueMeshData(meshData);
         GenerationManager.RequeueBuffer(meshBuffer);
         generationState = GeneratingState.Idle;
+        this.Render();
     }
 
     private void ConfigureComponents()
