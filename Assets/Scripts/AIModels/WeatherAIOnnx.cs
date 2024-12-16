@@ -7,14 +7,14 @@ public class WeatherAIONNX : IWeatherAI
     private Model _model;
     private IWorker _worker;
 
-    public WeatherAIONNX(string modelName)
+    public WeatherAIONNX(NNModel model)
     {
-        NNModel nnModel = Resources.Load<NNModel>(modelName);
-        if (nnModel == null)
-        {
-            Debug.LogError($"WeatherAIONNX: Could not load NNModel '{modelName}' from Resources.");
-            return;
-        }
+        NNModel nnModel = model;;
+        // if (nnModel == null)
+        // {
+        //     Debug.LogError($"WeatherAIONNX: Could not load NNModel '{nnModel.name}' from Resources.");
+        //     return;
+        // }
 
         _model = ModelLoader.Load(nnModel);
         _worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Auto, _model);

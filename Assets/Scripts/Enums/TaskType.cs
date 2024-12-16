@@ -1,6 +1,7 @@
 
 public enum TaskType
 {
+    CORE_AI_PERIODIC_TASK,
     EVALUATE_RESOURCES,
     MANAGE_SETTLEMENTS,
     UPDATE_WEATHER,

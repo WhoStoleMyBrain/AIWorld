@@ -9,15 +9,16 @@ public class CoreAIOnnx : ICoreAI
     private TaskType[] _taskMapping;
 
     // Constructor: modelName is the name of the model asset without extension inside "Resources" folder.
-    public CoreAIOnnx(string modelName)
+    public CoreAIOnnx(NNModel model)
     {
         // Load the NNModel from Resources
-        NNModel nnModel = Resources.Load<NNModel>(modelName);
-        if (nnModel == null)
-        {
-            Debug.LogError($"CoreAIOnnx: Could not load NNModel '{modelName}' from Resources.");
-            return;
-        }
+        NNModel nnModel = model;
+        // NNModel nnModel = Resources.Load<NNModel>(modelName);
+        // if (nnModel == null)
+        // {
+        //     Debug.LogError($"CoreAIOnnx: Could not load NNModel '{nnModel.name}' from Resources.");
+        //     return;
+        // }
 
         _model = ModelLoader.Load(nnModel);
         _worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Auto, _model);
@@ -34,7 +35,7 @@ public class CoreAIOnnx : ICoreAI
 
     public TaskType EvaluateNextTask(float[] worldState)
     {
-        if (worldState.Length != 5) 
+        if (worldState.Length != 5)
             throw new System.ArgumentException("World state must be length 5.");
 
         // Create input tensor (1 batch, 5 features)
@@ -66,5 +67,15 @@ public class CoreAIOnnx : ICoreAI
 
             return decidedTask;
         }
+    }
+
+    public void Initialize() {}
+
+    public void ProcessTask(GameTask task)
+    {
+        // TODO: Load worldState either from task payload OR statically from 
+        float[] worldState = new float[5] {1f, 0.5f, 0.3f, 2f, 0.1f};
+        TaskType evaluateTask = EvaluateNextTask(worldState);
+        TaskHandler.Instance.AddTask(new GameTask(evaluateTask));
     }
 }

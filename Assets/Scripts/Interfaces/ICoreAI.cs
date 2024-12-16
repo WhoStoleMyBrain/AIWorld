@@ -1,4 +1,4 @@
-public interface ICoreAI
+public interface ICoreAI:IAI
 {
     TaskType EvaluateNextTask(float[] worldState);
 }

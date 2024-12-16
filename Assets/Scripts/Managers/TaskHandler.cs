@@ -67,6 +67,7 @@ public class TaskHandler : MonoBehaviour
 
     private void Update()
     {
+        Debug.Log("Running update on TaskHandler");
         // Process a limited number of tasks per frame to avoid lag
         for (int i = 0; i < _tasksPerCycle; i++)
         {

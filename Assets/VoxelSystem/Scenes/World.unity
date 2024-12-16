@@ -518,6 +518,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1714001747}
   - component: {fileID: 1714001748}
+  - component: {fileID: 1714001749}
   m_Layer: 0
   m_Name: AI
   m_TagString: Untagged
@@ -552,6 +553,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 416a4650feaa7c54b910f57f0488bce1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  coreAIModel: {fileID: 5022602860645237092, guid: 2535d71edbb562e41a22e512db505ea0, type: 3}
+  weatherAIModel: {fileID: 5022602860645237092, guid: dbdd8617a598f554aadace7a25dcb83b, type: 3}
+  tickTime: 5000
+--- !u!114 &1714001749
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1714001746}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 981070ed167c3c24ca4b07ddcda57d81, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _tasksPerCycle: 1
 --- !u!1 &1913821936 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 5114316295409598397, guid: aabe50cdfdf0e7e4bb34b723b8a8cda0, type: 3}
